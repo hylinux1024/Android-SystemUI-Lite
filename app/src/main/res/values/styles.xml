@@ -1,0 +1,79 @@
+<resources xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:androidprv="http://schemas.android.com/apk/prv/res/android">
+
+    <style name="TextAppearance.StatusBar.Clock" parent="@*android:style/TextAppearance.StatusBar.Icon">
+        <item name="android:textSize">@dimen/status_bar_clock_size</item>
+        <item name="android:textColor">@color/status_bar_clock_color</item>
+    </style>
+
+    <style name="TextAppearance.StatusBar.Expanded" parent="@*android:style/TextAppearance.StatusBar">
+        <item name="android:textColor">?android:attr/textColorTertiary</item>
+    </style>
+
+    <style name="TextAppearance.StatusBar.Expanded.Clock" parent="@*android:style/TextAppearance">
+        <item name="android:textSize">@dimen/qs_time_expanded_size</item>
+        <item name="android:textColor">?android:attr/textColorPrimary</item>
+        <item name="android:textStyle">normal</item>
+    </style>
+
+    <style name="TextAppearance.QS" parent="@*android:style/TextAppearance">
+        <item name="android:textStyle">normal</item>
+        <item name="android:textColor">?android:attr/textColorPrimary</item>
+    </style>
+
+    <style name="TextAppearance.QS.TileLabel" parent="@*android:style/TextAppearance">
+        <item name="android:textSize">@dimen/qs_tile_text_size</item>
+        <item name="android:letterSpacing">0.01</item>
+        <item name="android:lineHeight">20sp</item>
+    </style>
+
+    <style name="TextAppearance.QS.Status" parent="@*android:style/TextAppearance">
+        <item name="android:textColor">?android:attr/textColorPrimary</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="TextAppearance.QS.SecurityFooter" parent="@*android:style/TextAppearance">
+        <item name="android:textColor">?android:attr/textColorSecondary</item>
+    </style>
+
+    <style name="TextAppearance.QS.DataUsage" parent="@*android:style/TextAppearance">
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="TextAppearance.QS.DataUsage.Usage" parent="@*android:style/TextAppearance">
+        <item name="android:textSize">36sp</item>
+        <item name="android:textColor">?android:attr/colorAccent</item>
+    </style>
+
+    <!-- Main SystemUI theme -->
+    <style name="Theme.SystemUI" parent="@*android:style/Theme.DeviceDefault.SystemUI">
+        <item name="lightIconTheme">@style/DualToneLightTheme</item>
+        <item name="darkIconTheme">@style/DualToneDarkTheme</item>
+        <item name="wallpaperTextColor">@color/wallpaper_text_color_primary</item>
+        <item name="wallpaperTextColorSecondary">@color/wallpaper_text_color_secondary</item>
+        <item name="singleToneColor">#FFFFFFFF</item>
+        <item name="iconBackgroundColor">#3d000000</item>
+        <item name="fillColor">#7a000000</item>
+        <item name="homeHandleColor">#99000000</item>
+    </style>
+
+    <!-- Dual tone icon themes -->
+    <style name="DualToneLightTheme">
+        <item name="iconBackgroundColor">@color/light_mode_icon_color_dual_tone_background</item>
+        <item name="fillColor">@color/light_mode_icon_color_dual_tone_fill</item>
+        <item name="singleToneColor">@color/light_mode_icon_color_single_tone</item>
+        <item name="homeHandleColor">@color/navigation_bar_home_handle_light_color</item>
+    </style>
+
+    <style name="DualToneDarkTheme">
+        <item name="iconBackgroundColor">@color/dark_mode_icon_color_dual_tone_background</item>
+        <item name="fillColor">@color/dark_mode_icon_color_dual_tone_fill</item>
+        <item name="singleToneColor">@color/dark_mode_icon_color_single_tone</item>
+        <item name="homeHandleColor">@color/navigation_bar_home_handle_dark_color</item>
+    </style>
+
+    <!-- Tuner -->
+    <style name="TunerSettings" parent="@*android:style/Theme.DeviceDefault.Settings">
+        <item name="android:windowActionBar">false</item>
+    </style>
+</resources>

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Three button navigation bar -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/navigation_bar_view"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/navigation_bar_size"
+    android:orientation="horizontal"
+    android:gravity="center"
+    android:background="@color/system_bar_background">
+
+    <!-- Back button -->
+    <ImageView
+        android:id="@+id/back_button"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:scaleType="center"
+        android:src="@drawable/ic_sysbar_back"
+        android:contentDescription="@string/accessibility_back"
+        android:paddingStart="@dimen/navigation_side_padding"
+        android:paddingEnd="@dimen/navigation_side_padding"
+        android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+    <!-- Home button -->
+    <ImageView
+        android:id="@+id/home_button"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:scaleType="center"
+        android:src="@drawable/ic_sysbar_home"
+        android:contentDescription="@string/accessibility_home"
+        android:paddingStart="@dimen/navigation_side_padding"
+        android:paddingEnd="@dimen/navigation_side_padding"
+        android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+    <!-- Recent button -->
+    <ImageView
+        android:id="@+id/recent_button"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:scaleType="center"
+        android:src="@drawable/ic_sysbar_recent"
+        android:contentDescription="@string/accessibility_recent"
+        android:paddingStart="@dimen/navigation_side_padding"
+        android:paddingEnd="@dimen/navigation_side_padding"
+        android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+</LinearLayout>

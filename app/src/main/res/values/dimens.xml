@@ -1,0 +1,117 @@
+<resources>
+    <!-- Status bar -->
+    <dimen name="status_bar_height">@*android:dimen/status_bar_height</dimen>
+    <dimen name="status_bar_icon_size">@*android:dimen/status_bar_icon_size</dimen>
+    <dimen name="status_bar_horizontal_padding">2.5dp</dimen>
+    <dimen name="status_bar_battery_icon_height">13.0dp</dimen>
+    <dimen name="status_bar_battery_icon_width">7.8dp</dimen>
+    <dimen name="status_bar_battery_extra_vertical_spacing">1dp</dimen>
+    <dimen name="status_bar_clock_size">14sp</dimen>
+    <dimen name="status_bar_clock_starting_padding">7dp</dimen>
+    <dimen name="status_bar_clock_end_padding">0dp</dimen>
+    <dimen name="status_bar_left_clock_starting_padding">0dp</dimen>
+    <dimen name="status_bar_left_clock_end_padding">2dp</dimen>
+    <dimen name="status_bar_wifi_signal_spacer_width">2.5dp</dimen>
+    <dimen name="status_bar_wifi_signal_size">@*android:dimen/status_bar_system_icon_size</dimen>
+    <dimen name="status_bar_airplane_spacer_width">4dp</dimen>
+    <dimen name="status_bar_system_icon_spacing">0dp</dimen>
+    <dimen name="status_bar_icon_drawing_size">15dp</dimen>
+    <dimen name="status_bar_icon_padding">0dp</dimen>
+    <dimen name="status_bar_padding_start">8dp</dimen>
+    <dimen name="status_bar_padding_end">8dp</dimen>
+    <dimen name="status_bar_padding_top">0dp</dimen>
+
+    <!-- Navigation bar -->
+    <dimen name="navigation_bar_size">@*android:dimen/navigation_bar_height</dimen>
+    <dimen name="navigation_handle_radius">2dp</dimen>
+    <dimen name="navigation_handle_bottom">10dp</dimen>
+    <dimen name="navigation_home_handle_width">108dp</dimen>
+    <dimen name="navigation_key_width">70dp</dimen>
+    <dimen name="navigation_icon_size">24dp</dimen>
+    <dimen name="navigation_side_padding">36dp</dimen>
+    <dimen name="navigation_key_padding">0dp</dimen>
+
+    <!-- Back gesture panel -->
+    <dimen name="navigation_edge_panel_width">105dp</dimen>
+    <dimen name="navigation_edge_panel_height">268dp</dimen>
+    <dimen name="navigation_edge_action_drag_threshold">16dp</dimen>
+    <dimen name="navigation_edge_action_progress_threshold">412dp</dimen>
+    <dimen name="navigation_edge_arrow_min_y">64dp</dimen>
+    <dimen name="navigation_edge_finger_offset">64dp</dimen>
+    <dimen name="navigation_edge_arrow_thickness">4dp</dimen>
+
+    <!-- Notification -->
+    <dimen name="notification_min_height">@*android:dimen/notification_min_height</dimen>
+    <dimen name="notification_max_height">358dp</dimen>
+    <dimen name="notification_max_heads_up_height">136dp</dimen>
+    <dimen name="notification_side_paddings">16dp</dimen>
+    <dimen name="notification_corner_radius">28dp</dimen>
+    <dimen name="notification_corner_radius_small">4dp</dimen>
+    <dimen name="notification_shelf_height">48dp</dimen>
+    <dimen name="notification_divider_height">2dp</dimen>
+    <dimen name="notification_panel_margin_horizontal">0dp</dimen>
+    <dimen name="notification_shade_content_margin_horizontal">16dp</dimen>
+
+    <!-- Quick Settings -->
+    <dimen name="qs_corner_radius">28dp</dimen>
+    <dimen name="qs_tile_height">80dp</dimen>
+    <dimen name="qs_tile_margin_horizontal">8dp</dimen>
+    <dimen name="qs_tile_margin_vertical">8dp</dimen>
+    <dimen name="qs_icon_size">20dp</dimen>
+    <dimen name="qs_tile_icon_size">24dp</dimen>
+    <dimen name="qs_tile_text_size">14sp</dimen>
+    <dimen name="qs_tile_start_padding">16dp</dimen>
+    <dimen name="qs_tile_padding">12dp</dimen>
+    <dimen name="qs_tile_margin_vertical_half">4dp</dimen>
+    <dimen name="qs_label_container_margin">10dp</dimen>
+    <dimen name="qs_panel_margin_horizontal">12dp</dimen>
+    <dimen name="qs_panel_padding">16dp</dimen>
+    <dimen name="qs_panel_elevation">4dp</dimen>
+    <dimen name="qs_header_height">120dp</dimen>
+    <dimen name="qs_header_row_min_height">48dp</dimen>
+    <dimen name="qs_footer_height">48dp</dimen>
+    <dimen name="qs_footer_action_button_size">48dp</dimen>
+    <dimen name="qs_footer_action_corner_radius">20dp</dimen>
+    <dimen name="qs_horizontal_margin">16dp</dimen>
+    <dimen name="qs_time_collapsed_size">14sp</dimen>
+    <dimen name="qs_time_expanded_size">14sp</dimen>
+    <dimen name="qs_emergency_calls_only_text_size">12sp</dimen>
+    <dimen name="qs_falsing_threshold">60dp</dimen>
+    <dimen name="footer_actions_height">60dp</dimen>
+
+    <!-- Brightness -->
+    <dimen name="brightness_mirror_height">48dp</dimen>
+    <dimen name="qs_brightness_margin_top">8dp</dimen>
+    <dimen name="qs_brightness_margin_bottom">16dp</dimen>
+
+    <!-- Gesture thresholds -->
+    <dimen name="pull_span_min">25dp</dimen>
+    <dimen name="min_top_overscroll_to_qs">36dp</dimen>
+    <dimen name="unlock_falsing_threshold">80dp</dimen>
+    <dimen name="swipe_helper_falsing_threshold">70dp</dimen>
+    <dimen name="keyguard_drag_down_min_distance">100dp</dimen>
+
+    <!-- Battery -->
+    <dimen name="battery_level_padding_start">4dp</dimen>
+    <dimen name="system_icons_super_container_margin_start">16dp</dimen>
+    <dimen name="signal_cluster_battery_padding">6dp</dimen>
+
+    <!-- Panel overshoot -->
+    <dimen name="panel_overshoot_amount">16dp</dimen>
+
+    <!-- Keyguard -->
+    <dimen name="keyguard_shadow_radius">5</dimen>
+    <dimen name="keyguard_indication_margin_bottom">32dp</dimen>
+    <dimen name="lock_icon_margin_bottom">74dp</dimen>
+    <dimen name="status_bar_header_height_keyguard">40dp</dimen>
+
+    <!-- Navigation key button ripple -->
+    <dimen name="key_button_ripple_max_width">95dp</dimen>
+
+    <!-- Min clickable item -->
+    <dimen name="min_clickable_item_size">48dp</dimen>
+
+    <!-- User avatar -->
+    <dimen name="multi_user_avatar_keyguard_size">22dp</dimen>
+    <dimen name="multi_user_avatar_expanded_size">20dp</dimen>
+</resources>

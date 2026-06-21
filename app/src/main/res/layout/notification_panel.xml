@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification shade window — matches AOSP expanded panel style -->
+<com.android.systemui.notification.NotificationShadeView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/notification_shade_window"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:focusable="true"
+    android:focusableInTouchMode="true"
+    android:fitsSystemWindows="true">
+
+    <!-- Scrim behind — opacity driven by expansion fraction -->
+    <View
+        android:id="@+id/scrim_behind"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/black" />
+
+    <!-- Main content container -->
+    <LinearLayout
+        android:id="@+id/notification_container_parent"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:clipToPadding="false"
+        android:clipChildren="false"
+        android:paddingTop="@dimen/status_bar_height">
+
+        <!-- Quick Settings Panel -->
+        <include
+            layout="@layout/qs_panel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <!-- Notification header divider -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#33FFFFFF"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginVertical="4dp" />
+
+        <!-- Notification list -->
+        <ScrollView
+            android:id="@+id/notification_stack_scroll_layout"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:scrollbars="none"
+            android:paddingTop="4dp"
+            android:paddingBottom="16dp"
+            android:paddingHorizontal="@dimen/notification_shade_content_margin_horizontal">
+
+            <LinearLayout
+                android:id="@+id/notification_stack"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+
+        <!-- Footer -->
+        <LinearLayout
+            android:id="@+id/footer_actions"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/footer_actions_height"
+            android:gravity="center_vertical|end"
+            android:paddingHorizontal="16dp"
+            android:background="@drawable/qs_footer_actions_background">
+
+            <TextView
+                android:id="@+id/qs_edit_button"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:gravity="center"
+                android:text="⏻"
+                android:textSize="18sp"
+                android:textColor="#FFFFFFFF"
+                android:background="@drawable/qs_footer_action_circle"
+                android:paddingHorizontal="16dp"
+                android:layout_marginEnd="8dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Transparent front scrim -->
+    <View
+        android:id="@+id/scrim_in_front"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent" />
+
+</com.android.systemui.notification.NotificationShadeView>

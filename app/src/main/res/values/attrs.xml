@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="StatusBarView">
+        <attr name="forceDark" format="boolean" />
+    </declare-styleable>
+
+    <declare-styleable name="NavigationHandle">
+        <attr name="lightColor" format="reference|color" />
+        <attr name="darkColor" format="reference|color" />
+    </declare-styleable>
+
+    <declare-styleable name="DualToneLightTheme">
+        <attr name="iconBackgroundColor" format="reference|color" />
+        <attr name="fillColor" format="reference|color" />
+        <attr name="singleToneColor" format="reference|color" />
+        <attr name="homeHandleColor" format="reference|color" />
+    </declare-styleable>
+
+    <!-- SystemUI theme attributes -->
+    <attr name="lightIconTheme" format="reference" />
+    <attr name="darkIconTheme" format="reference" />
+    <attr name="wallpaperTextColor" format="reference|color" />
+    <attr name="wallpaperTextColorSecondary" format="reference|color" />
+    <attr name="wallpaperTextColorAccent" format="reference|color" />
+    <attr name="offStateColor" format="reference|color" />
+    <attr name="underSurfaceColor" format="reference|color" />
+    <attr name="shadowRadius" format="reference|dimension" />
+</resources>

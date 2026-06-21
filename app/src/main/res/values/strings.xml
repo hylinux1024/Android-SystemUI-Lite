@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">SystemUI-Lite</string>
+    <string name="app_label">System UI</string>
+    <string name="system_ui_tuner">System UI Tuner</string>
+    <string name="status_bar">Status bar</string>
+    <string name="accessibility_home">Home</string>
+    <string name="accessibility_back">Back</string>
+    <string name="accessibility_recent">Recent apps</string>
+    <string name="quick_settings_wifi">Wi-Fi</string>
+    <string name="quick_settings_bluetooth">Bluetooth</string>
+    <string name="quick_settings_flashlight">Flashlight</string>
+    <string name="quick_settings_airplane">Airplane mode</string>
+    <string name="quick_settings_auto_rotate">Auto rotate</string>
+    <string name="quick_settings_dnd">Do Not Disturb</string>
+    <string name="quick_settings_location">Location</string>
+    <string name="quick_settings_hotspot">Hotspot</string>
+    <string name="notification_panel_header">Notifications</string>
+    <string name="clear_all_notifications">Clear all</string>
+</resources>

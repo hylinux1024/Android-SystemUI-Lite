@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Privileged permissions allowlist for SystemUI-Lite -->
+<permissions>
+    <privapp-permissions package="com.android.systemui">
+        <!-- System/signature permissions -->
+        <permission name="android.permission.READ_WALLPAPER_INTERNAL" />
+        <permission name="android.permission.WRITE_SECURE_SETTINGS" />
+        <permission name="android.permission.STATUS_BAR" />
+        <permission name="android.permission.STATUS_BAR_SERVICE" />
+        <permission name="android.permission.SET_WALLPAPER_DIM_AMOUNT" />
+        <permission name="android.permission.MODIFY_AUDIO_ROUTING" />
+        <permission name="android.permission.INJECT_EVENTS" />
+        <permission name="android.permission.INTERNAL_SYSTEM_WINDOW" />
+        <permission name="android.permission.CONTROL_DISPLAY_BRIGHTNESS" />
+        <permission name="android.permission.MANAGE_NOTIFICATIONS" />
+        <permission name="android.permission.SYSTEM_ALERT_WINDOW" />
+        <permission name="android.permission.EXPAND_STATUS_BAR" />
+    </privapp-permissions>
+</permissions>
