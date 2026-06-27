@@ -278,9 +278,9 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                     com.android.systemui.lite.systemui.ui.NavigationBar(
                         themeColor = themeColor,
                         navigationMode = navigationMode,
-                        onBack = { /* TODO: inject back event */ },
-                        onHome = { /* TODO: inject home event */ },
-                        onRecents = { /* TODO: inject recents event */ }
+                        onBack = { sendKeyEvent(4) },      // KEYCODE_BACK
+                        onHome = { sendKeyEvent(3) },      // KEYCODE_HOME
+                        onRecents = { sendKeyEvent(187) }  // KEYCODE_APP_SWITCH
                     )
                 }
             }
@@ -475,6 +475,19 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
         Log.d(TAG, "NavigationBar height from resources: ${height}px")
         // If height is 0 (gesture nav or resource not found), use a default 48dp
         return if (height > 0) height else (48 * resources.displayMetrics.density).toInt()
+    }
+
+    /**
+     * Send a key event using the input shell command.
+     * Requires root or shell permissions.
+     */
+    private fun sendKeyEvent(keyCode: Int) {
+        Log.d(TAG, "Sending key event: $keyCode")
+        try {
+            Runtime.getRuntime().exec(arrayOf("input", "keyevent", keyCode.toString()))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send key event $keyCode: ${e.message}")
+        }
     }
 
     override fun onDestroy() {
