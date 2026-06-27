@@ -71,9 +71,9 @@ check_device() {
 build_apk() {
     print_info "Building APK..."
     if [ "$1" = "clean" ]; then
-        ./gradlew clean assembleDebug
+        ./gradlew clean assembleDebug renameDebugApk
     else
-        ./gradlew assembleDebug
+        ./gradlew assembleDebug renameDebugApk
     fi
 
     if [ ! -f "$APK_PATH" ]; then
