@@ -1,0 +1,6 @@
+{
+  "name": "SystemUI Simulator",
+  "description": "An interactive, real-time simulator and parameter config dashboard of Android SystemUI, with status bar, navigation bar, lockscreen, notification shade, and a modular plugin framework.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
