@@ -286,6 +286,8 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             setTitle("NotificationShade")
             packageName = this@SystemUIOverlayService.packageName
             setFitInsetsTypes(0)
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
 
         shadeView = ComposeView(this).apply {

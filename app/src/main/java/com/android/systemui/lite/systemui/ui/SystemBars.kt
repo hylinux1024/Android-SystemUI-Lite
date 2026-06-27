@@ -216,7 +216,25 @@ fun SystemBars(
             )
         }
 
-        // --- 4. Notification Shade Overlay (Pulled Down) ---
+        // --- 4. Custom Status Bar (Always at top) ---
+        StatusBar(
+            heightDp = statusBarHeight,
+            iconSizeDp = statusBarIconSize,
+            clockPosition = clockPosition,
+            batteryStyle = batteryStyle,
+            batteryLevel = batteryLevel,
+            isCharging = isCharging,
+            isWifiOn = isWifiOn,
+            isBluetoothOn = isBluetoothOn,
+            isDoNotDisturb = isDoNotDisturb,
+            isAirplaneMode = isAirplaneMode,
+            timeString = timeString,
+            isTrafficActive = isTrafficActive,
+            themeColor = themeColor,
+            onShadeToggle = { viewModel.toggleNotificationShade() }
+        )
+
+        // --- 5. Notification Shade Overlay (Pulled Down) ---
         AnimatedVisibility(
             visible = !isLocked && activeScreen == "NotificationShade",
             enter = slideInVertically(
@@ -246,24 +264,6 @@ fun SystemBars(
                 onClearAllNotifications = { viewModel.clearAllNotifications() }
             )
         }
-
-        // --- 5. Custom Status Bar (Always at top) ---
-        StatusBar(
-            heightDp = statusBarHeight,
-            iconSizeDp = statusBarIconSize,
-            clockPosition = clockPosition,
-            batteryStyle = batteryStyle,
-            batteryLevel = batteryLevel,
-            isCharging = isCharging,
-            isWifiOn = isWifiOn,
-            isBluetoothOn = isBluetoothOn,
-            isDoNotDisturb = isDoNotDisturb,
-            isAirplaneMode = isAirplaneMode,
-            timeString = timeString,
-            isTrafficActive = isTrafficActive,
-            themeColor = themeColor,
-            onShadeToggle = { viewModel.toggleNotificationShade() }
-        )
 
         // --- 6. Dynamic Island Cutout (If active) ---
         if (isDynamicIslandActive) {

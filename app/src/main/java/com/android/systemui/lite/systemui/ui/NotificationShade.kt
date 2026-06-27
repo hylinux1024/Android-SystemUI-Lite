@@ -42,6 +42,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -83,6 +84,7 @@ fun NotificationShade(
 ) {
     val lazyListState = rememberLazyListState()
     var accumCloseY by remember { mutableFloatStateOf(0f) }
+    val statusBarHeightDp by viewModel.statusBarHeight.collectAsState()
 
     // Unified close connection: handles nested scroll from both
     // QS area (via scrollable) and notification list (via LazyColumn).
@@ -125,7 +127,7 @@ fun NotificationShade(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.92f))
-            .padding(16.dp)
+            .padding(top = (statusBarHeightDp + 16).dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
             .nestedScroll(shadeCloseConnection)
     ) {
         // Upper section — QS, sliders, media (vertical drags → nested scroll → close)
