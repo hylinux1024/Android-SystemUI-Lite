@@ -1719,3 +1719,39 @@ fun GestureNavigationBar(
         )
     }
 }
+
+/**
+ * NavigationBar wrapper - delegates to ThreeButtonNavigationBar or GestureNavigationBar
+ * based on the current navigation mode.
+ */
+@Composable
+fun NavigationBar(
+    themeColor: Color,
+    navigationMode: NavigationMode,
+    onBack: () -> Unit,
+    onHome: () -> Unit,
+    onRecents: () -> Unit
+) {
+    when (navigationMode) {
+        NavigationMode.THREE_BUTTON -> {
+            ThreeButtonNavigationBar(
+                themeColor = themeColor,
+                onBack = onBack,
+                onHome = onHome,
+                onRecents = onRecents
+            )
+        }
+        NavigationMode.GESTURES -> {
+            GestureNavigationBar(
+                themeColor = themeColor,
+                onGesture = { gesture ->
+                    when {
+                        gesture.contains("HOME") -> onHome()
+                        gesture.contains("RECENTS") -> onRecents()
+                        gesture.contains("BACK") -> onBack()
+                    }
+                }
+            )
+        }
+    }
+}
