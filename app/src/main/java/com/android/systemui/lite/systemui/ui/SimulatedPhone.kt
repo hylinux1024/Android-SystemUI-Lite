@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
@@ -453,30 +454,12 @@ fun CustomStatusBar(
                     )
                 } else {
                     if (isWifiOn) {
-                        Canvas(modifier = Modifier.size(iconSize)) {
-                            drawArc(
-                                color = Color.White,
-                                startAngle = -135f,
-                                sweepAngle = 90f,
-                                useCenter = false,
-                                style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
-                                size = Size(size.width, size.height)
-                            )
-                            drawArc(
-                                color = Color.White,
-                                startAngle = -130f,
-                                sweepAngle = 80f,
-                                useCenter = false,
-                                style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
-                                size = Size(size.width * 0.6f, size.height * 0.6f),
-                                topLeft = Offset(size.width * 0.2f, size.height * 0.2f)
-                            )
-                            drawCircle(
-                                color = Color.White,
-                                radius = 1.5.dp.toPx(),
-                                center = Offset(size.width / 2, size.height * 0.8f)
-                            )
-                        }
+                        Icon(
+                            painter = painterResource(id = com.android.systemui.R.drawable.stat_sys_wifi_4),
+                            contentDescription = "WiFi On",
+                            tint = Color.White,
+                            modifier = Modifier.size(iconSize)
+                        )
                     }
                     if (isBluetoothOn) {
                         Icon(
