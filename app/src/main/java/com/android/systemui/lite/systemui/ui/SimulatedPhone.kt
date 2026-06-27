@@ -28,16 +28,20 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.android.systemui.lite.systemui.model.*
 import com.android.systemui.lite.systemui.viewmodel.SystemUIViewModel
 
@@ -387,14 +391,15 @@ fun CustomStatusBar(
                     onDragEnd = {
                         val absY = kotlin.math.abs(totalDragY)
                         val absX = kotlin.math.abs(totalDragX)
-                        if (absY < 12f && absX < 12f) {
+                        // Lower thresholds for better responsiveness
+                        if (absY < 8f && absX < 8f) {
                             // Tap: toggle shade
                             onShadeToggle()
-                        } else if (totalDragY > 20f) {
-                            // Swipe down: Open shade
+                        } else if (totalDragY > 10f) {
+                            // Swipe down: Open shade (more sensitive)
                             onShadeToggle()
-                        } else if (totalDragY < -20f) {
-                            // Swipe up: Close shade
+                        } else if (totalDragY < -10f) {
+                            // Swipe up: Close shade (more sensitive)
                             onShadeToggle()
                         }
                     },
@@ -1262,12 +1267,69 @@ fun NotificationShade(
     notifications: List<NotificationItem>,
     isResourceMonitorActive: Boolean,
     onDismissNotification: (Any) -> Unit,
-    onClearAllNotifications: () -> Unit
+    onClearAllNotifications: () -> Unit,
+    onCloseShade: () -> Unit = { viewModel.toggleNotificationShade() }
 ) {
+    // Drag offset for smooth drag-to-dismiss
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    val screenHeight = LocalConfiguration.current.screenHeightDp
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val offsetAnimatable = remember { Animatable(0f) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.92f))
+            .offset { IntOffset(0, with(density) { dragOffsetY.dp.roundToPx() }) }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = {
+                        dragOffsetY = 0f
+                    },
+                    onDragEnd = {
+                        // Check if dragged far enough or with enough velocity
+                        val threshold = screenHeight * 0.2f
+                        if (dragOffsetY < -threshold) {
+                            // Close shade with animation
+                            onCloseShade()
+                        } else {
+                            // Snap back to original position
+                            scope.launch {
+                                offsetAnimatable.snapTo(dragOffsetY)
+                                offsetAnimatable.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessMedium
+                                    )
+                                ) {
+                                    dragOffsetY = value
+                                }
+                            }
+                        }
+                    },
+                    onDragCancel = {
+                        // Snap back on cancel
+                        scope.launch {
+                            offsetAnimatable.snapTo(dragOffsetY)
+                            offsetAnimatable.animateTo(
+                                targetValue = 0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                )
+                            ) {
+                                dragOffsetY = value
+                            }
+                        }
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        dragOffsetY = (dragOffsetY + dragAmount.y).coerceAtMost(0f)
+                    }
+                )
+            }
             .padding(top = 56.dp, bottom = 64.dp)
             .padding(horizontal = 16.dp)
     ) {
@@ -1275,22 +1337,6 @@ fun NotificationShade(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .pointerInput(Unit) {
-                    var totalDragY = 0f
-                    detectDragGestures(
-                        onDragStart = { totalDragY = 0f },
-                        onDragEnd = {
-                            if (totalDragY < -40f) {
-                                viewModel.toggleNotificationShade()
-                            }
-                        },
-                        onDragCancel = {},
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            totalDragY += dragAmount.y
-                        }
-                    )
-                }
         ) {
             // --- 1. Quick Settings Grid (3x3) ---
             val toggles = listOf(
