@@ -266,11 +266,6 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
         val navBarHeight = getNavigationBarHeightPx()
         Log.d(TAG, "Nav bar height: ${navBarHeight}px")
 
-        if (navBarHeight == 0) {
-            Log.d(TAG, "Nav bar height is 0, skipping (gesture navigation?)")
-            return
-        }
-
         val params = createNavBarLayoutParams(navBarHeight)
 
         navBarView = ComposeView(this).apply {
@@ -472,11 +467,14 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
 
     private fun getNavigationBarHeightPx(): Int {
         val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
-        return if (resourceId > 0) {
+        val height = if (resourceId > 0) {
             resources.getDimensionPixelSize(resourceId)
         } else {
             0
         }
+        Log.d(TAG, "NavigationBar height from resources: ${height}px")
+        // If height is 0 (gesture nav or resource not found), use a default 48dp
+        return if (height > 0) height else (48 * resources.displayMetrics.density).toInt()
     }
 
     override fun onDestroy() {
