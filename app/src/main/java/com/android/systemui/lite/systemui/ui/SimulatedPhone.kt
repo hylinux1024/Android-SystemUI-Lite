@@ -350,6 +350,8 @@ fun CustomStatusBar(
     timeString: String,
     isTrafficActive: Boolean,
     themeColor: Color,
+    safeInsetLeft: Int = 0,
+    safeInsetRight: Int = 0,
     onShadeToggle: () -> Unit
 ) {
     var totalDragY by remember { mutableStateOf(0f) }
@@ -357,9 +359,18 @@ fun CustomStatusBar(
 
     // Status bar dimensions matching AOSP SystemUI-Lite reference
     val statusBarHeight = 24.dp
-    val horizontalPadding = 8.dp
+    val defaultHorizontalPadding = 8.dp
     val iconSize = 14.dp
     val clockTextSize = 14.sp
+
+    // Convert safe insets from pixels to dp (using density)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val safeLeftDp = with(density) { safeInsetLeft.toDp() }
+    val safeRightDp = with(density) { safeInsetRight.toDp() }
+
+    // Use the larger of default padding or safe inset
+    val startPadding = maxOf(defaultHorizontalPadding, safeLeftDp)
+    val endPadding = maxOf(defaultHorizontalPadding, safeRightDp)
 
     Row(
         modifier = Modifier
@@ -394,7 +405,7 @@ fun CustomStatusBar(
                     }
                 )
             }
-            .padding(horizontal = horizontalPadding),
+            .padding(start = startPadding, end = endPadding),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // --- Clock Section ---

@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -83,6 +84,15 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
     private var shadeView: ComposeView? = null
 
     private val viewModel by lazy { SystemUIViewModel.instance }
+
+    // Display cutout info
+    data class CutoutInfo(
+        val safeInsetLeft: Int = 0,
+        val safeInsetRight: Int = 0,
+        val cutoutRect: Rect = Rect()
+    )
+    private val _cutoutInfo = kotlinx.coroutines.flow.MutableStateFlow(CutoutInfo())
+    private val cutoutInfo: kotlinx.coroutines.flow.StateFlow<CutoutInfo> = _cutoutInfo
 
     // --- Lifecycle & Jetpack Compose ViewTree Requirements ---
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -169,6 +179,40 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
 
         statusBarView = ComposeView(this).apply {
             setupViewTreeOwners()
+
+            // Listen for window insets to detect display cutout
+            setOnApplyWindowInsetsListener { view, windowInsets ->
+                val displayCutout = windowInsets.displayCutout
+                if (displayCutout != null) {
+                    val cutoutRect = displayCutout.boundingRectTop
+                    val screenWidth = resources.displayMetrics.widthPixels
+                    val isCornerCutout = cutoutRect.left <= 0 || cutoutRect.right >= screenWidth
+
+                    val safeLeft: Int
+                    val safeRight: Int
+                    if (isCornerCutout) {
+                        // Corner cutout: use cutout width as left/right padding
+                        val cutoutWidth = cutoutRect.width()
+                        safeLeft = maxOf(cutoutWidth, displayCutout.safeInsetLeft)
+                        safeRight = maxOf(displayCutout.safeInsetRight, 0)
+                    } else {
+                        // Center cutout: use safe insets
+                        safeLeft = displayCutout.safeInsetLeft
+                        safeRight = displayCutout.safeInsetRight
+                    }
+                    Log.d(TAG, "Display cutout: rect=$cutoutRect, isCorner=$isCornerCutout, safeLeft=$safeLeft, safeRight=$safeRight")
+                    _cutoutInfo.value = CutoutInfo(
+                        safeInsetLeft = safeLeft,
+                        safeInsetRight = safeRight,
+                        cutoutRect = cutoutRect
+                    )
+                } else {
+                    Log.d(TAG, "No display cutout")
+                    _cutoutInfo.value = CutoutInfo()
+                }
+                view.onApplyWindowInsets(windowInsets)
+            }
+
             setContent {
                 MaterialTheme {
                     val batteryLevel by viewModel.batteryLevel.collectAsState()
@@ -185,6 +229,7 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                     val batteryStyle by viewModel.batteryStyle.collectAsState()
                     val plugins by viewModel.plugins.collectAsState()
                     val isTrafficActive = plugins.find { it.id == "traffic_indicator" }?.isEnabled == true
+                    val currentCutout by cutoutInfo.collectAsState()
 
                     CustomStatusBar(
                         heightDp = heightDp,
@@ -200,6 +245,8 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                         timeString = timeString,
                         isTrafficActive = isTrafficActive,
                         themeColor = themeColor,
+                        safeInsetLeft = currentCutout.safeInsetLeft,
+                        safeInsetRight = currentCutout.safeInsetRight,
                         onShadeToggle = {
                             toggleNotificationShade()
                         }
