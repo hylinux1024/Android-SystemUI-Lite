@@ -355,11 +355,17 @@ fun CustomStatusBar(
     var totalDragY by remember { mutableStateOf(0f) }
     var totalDragX by remember { mutableStateOf(0f) }
 
+    // Status bar dimensions matching AOSP SystemUI-Lite reference
+    val statusBarHeight = 24.dp
+    val horizontalPadding = 8.dp
+    val iconSize = 14.dp
+    val clockTextSize = 14.sp
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(heightDp.dp)
-            .background(Color.Black.copy(alpha = 0.25f))
+            .height(statusBarHeight)
+            .background(Color.Transparent)
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = {
@@ -388,7 +394,7 @@ fun CustomStatusBar(
                     }
                 )
             }
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = horizontalPadding),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // --- Clock Section ---
@@ -396,8 +402,8 @@ fun CustomStatusBar(
             Text(
                 text = timeString,
                 color = Color.White,
-                fontSize = (iconSizeDp * 0.85).sp,
-                fontWeight = FontWeight.Bold
+                fontSize = clockTextSize,
+                fontWeight = FontWeight.Medium
             )
         }
 
@@ -405,19 +411,19 @@ fun CustomStatusBar(
         val iconsComposable = @Composable {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 if (isTrafficActive) {
                     Text(
                         text = "1.2 MB/s",
                         color = themeColor,
-                        fontSize = (iconSizeDp * 0.7).sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(end = 4.dp)
                     )
                 }
                 if (isDoNotDisturb) {
-                    Canvas(modifier = Modifier.size((iconSizeDp * 0.9).dp)) {
+                    Canvas(modifier = Modifier.size(iconSize)) {
                         drawCircle(color = Color.White.copy(alpha = 0.8f))
                         drawLine(
                             color = Color.Black,
@@ -429,15 +435,14 @@ fun CustomStatusBar(
                 }
                 if (isAirplaneMode) {
                     Icon(
-                        imageVector = Icons.Default.Star, // Star placeholder for airplane
+                        imageVector = Icons.Default.Star,
                         contentDescription = "Airplane Mode",
                         tint = Color.White,
-                        modifier = Modifier.size(iconSizeDp.dp)
+                        modifier = Modifier.size(iconSize)
                     )
                 } else {
                     if (isWifiOn) {
-                        // Drawing simple custom Wi-Fi icon
-                        Canvas(modifier = Modifier.size(iconSizeDp.dp)) {
+                        Canvas(modifier = Modifier.size(iconSize)) {
                             drawArc(
                                 color = Color.White,
                                 startAngle = -135f,
@@ -464,10 +469,10 @@ fun CustomStatusBar(
                     }
                     if (isBluetoothOn) {
                         Icon(
-                            imageVector = Icons.Default.Favorite, // placeholder for bluetooth
+                            imageVector = Icons.Default.Favorite,
                             contentDescription = "Bluetooth On",
                             tint = Color.White,
-                            modifier = Modifier.size((iconSizeDp * 0.9).dp)
+                            modifier = Modifier.size(iconSize)
                         )
                     }
                 }
@@ -476,21 +481,21 @@ fun CustomStatusBar(
                 if (batteryStyle != BatteryPercentageStyle.HIDDEN) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         if (batteryStyle == BatteryPercentageStyle.ICON_AND_TEXT || batteryStyle == BatteryPercentageStyle.TEXT_ONLY) {
                             Text(
                                 text = "$batteryLevel%",
                                 color = if (batteryLevel < 20) Color(0xFFEF4444) else Color.White,
-                                fontSize = (iconSizeDp * 0.75).sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
                             )
                         }
                         if (batteryStyle == BatteryPercentageStyle.ICON_ONLY || batteryStyle == BatteryPercentageStyle.ICON_AND_TEXT) {
                             Canvas(
                                 modifier = Modifier
-                                    .width((iconSizeDp * 1.5).dp)
-                                    .height(iconSizeDp.dp)
+                                    .width(13.dp)
+                                    .height(iconSize)
                             ) {
                                 val w = size.width
                                 val h = size.height
@@ -1641,8 +1646,13 @@ fun ThreeButtonNavigationBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Back
-        IconButton(onClick = onBack) {
+        // Back - use Box with click instead of IconButton
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clickable { onBack() },
+            contentAlignment = Alignment.Center
+        ) {
             Canvas(modifier = Modifier.size(14.dp)) {
                 val path = Path().apply {
                     moveTo(size.width, 0f)
@@ -1653,14 +1663,24 @@ fun ThreeButtonNavigationBar(
                 drawPath(path = path, color = Color.White)
             }
         }
-        // Home
-        IconButton(onClick = onHome) {
+        // Home - use Box with click instead of IconButton
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clickable { onHome() },
+            contentAlignment = Alignment.Center
+        ) {
             Canvas(modifier = Modifier.size(14.dp)) {
                 drawCircle(color = Color.White, style = Stroke(width = 1.5.dp.toPx()))
             }
         }
-        // Recents
-        IconButton(onClick = onRecents) {
+        // Recents - use Box with click instead of IconButton
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clickable { onRecents() },
+            contentAlignment = Alignment.Center
+        ) {
             Canvas(modifier = Modifier.size(12.dp)) {
                 drawRect(
                     color = Color.White,
