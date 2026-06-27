@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,13 +39,22 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.android.systemui.lite.systemui.model.NotificationItem
@@ -70,129 +80,166 @@ fun NotificationShade(
     onClearAllNotifications: () -> Unit,
     onCloseShade: () -> Unit = { viewModel.toggleNotificationShade() }
 ) {
+    val lazyListState = rememberLazyListState()
+    var accumCloseY by remember { mutableFloatStateOf(0f) }
+
+    val shadeCloseConnection = remember(lazyListState) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val atTop = lazyListState.firstVisibleItemIndex == 0 &&
+                        lazyListState.firstVisibleItemScrollOffset == 0
+                if (atTop && available.y < 0) {
+                    accumCloseY += -available.y
+                    return Offset(0f, available.y)
+                }
+                accumCloseY = 0f
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                val atTop = lazyListState.firstVisibleItemIndex == 0 &&
+                        lazyListState.firstVisibleItemScrollOffset == 0
+                if (atTop && available.y < 0 && accumCloseY > 120f) {
+                    onCloseShade()
+                    accumCloseY = 0f
+                    return available
+                }
+                accumCloseY = 0f
+                return Velocity.Zero
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.92f))
             .padding(16.dp)
-            .pointerInput(Unit) {
-                var totalDragY = 0f
-                detectDragGestures(
-                    onDragStart = { totalDragY = 0f },
-                    onDragEnd = {
-                        if (totalDragY < -40f) {
-                            onCloseShade()
-                        }
-                    },
-                    onDragCancel = {},
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        totalDragY += dragAmount.y
-                    }
-                )
-            }
     ) {
-        // --- 1. Quick Settings Grid (3x3) ---
-        val toggles = listOf(
-            Triple("Wi-Fi", isWifiOn, { viewModel.toggleWifi() }),
-            Triple("Bluetooth", isBluetoothOn, { viewModel.toggleBluetooth() }),
-            Triple("DND", isDoNotDisturb, { viewModel.toggleDnd() }),
-            Triple("Flashlight", isFlashlightOn, { viewModel.toggleFlashlight() }),
-            Triple("Airplane", isAirplaneMode, { viewModel.toggleAirplaneMode() }),
-            Triple("Auto-Rotate", isAutoRotateOn, { viewModel.toggleAutoRotate() }),
-            Triple("Screen Rec", isScreenRecording, { viewModel.toggleScreenRecording() })
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        // Upper section — QS, sliders, media. Swipe up here to close.
+        Box(
+            modifier = Modifier
+                .pointerInput(Unit) {
+                    var totalDragY = 0f
+                    detectDragGestures(
+                        onDragStart = { totalDragY = 0f },
+                        onDragEnd = {
+                            if (totalDragY < -40f) {
+                                onCloseShade()
+                            }
+                        },
+                        onDragCancel = {},
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            totalDragY += dragAmount.y
+                        }
+                    )
+                }
         ) {
-            Text("Quick Settings", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Icon(
-                imageVector = Icons.Default.Settings,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier
-                    .size(18.dp)
-                    .clickable { onCloseShade() }
-            )
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                toggles.take(3).forEach { tile ->
-                    QSTile(label = tile.first, isActive = tile.second, onClick = tile.third, themeColor = themeColor, modifier = Modifier.weight(1f))
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                toggles.drop(3).take(3).forEach { tile ->
-                    QSTile(label = tile.first, isActive = tile.second, onClick = tile.third, themeColor = themeColor, modifier = Modifier.weight(1f))
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                toggles.drop(6).firstOrNull()?.let { tile ->
-                    QSTile(label = tile.first, isActive = tile.second, onClick = tile.third, themeColor = themeColor, modifier = Modifier.weight(0.33f))
-                }
-                Spacer(modifier = Modifier.weight(0.67f))
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // --- 2. Brightness Slider & Volume Slider ---
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(Icons.Default.Star, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                Slider(
-                    value = brightness,
-                    onValueChange = { viewModel.setBrightness(it) },
-                    colors = SliderDefaults.colors(
-                        thumbColor = themeColor,
-                        activeTrackColor = themeColor,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.15f)
-                    ),
-                    modifier = Modifier.weight(1f)
+            Column {
+                // --- 1. Quick Settings Grid (3x3) ---
+                val toggles = listOf(
+                    Triple("Wi-Fi", isWifiOn, { viewModel.toggleWifi() }),
+                    Triple("Bluetooth", isBluetoothOn, { viewModel.toggleBluetooth() }),
+                    Triple("DND", isDoNotDisturb, { viewModel.toggleDnd() }),
+                    Triple("Flashlight", isFlashlightOn, { viewModel.toggleFlashlight() }),
+                    Triple("Airplane", isAirplaneMode, { viewModel.toggleAirplaneMode() }),
+                    Triple("Auto-Rotate", isAutoRotateOn, { viewModel.toggleAutoRotate() }),
+                    Triple("Screen Rec", isScreenRecording, { viewModel.toggleScreenRecording() })
                 )
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(Icons.Default.Favorite, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                Slider(
-                    value = mediaVolume,
-                    onValueChange = { viewModel.setMediaVolume(it) },
-                    colors = SliderDefaults.colors(
-                        thumbColor = themeColor,
-                        activeTrackColor = themeColor,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.15f)
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Quick Settings", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable { onCloseShade() }
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        toggles.take(3).forEach { tile ->
+                            QSTile(label = tile.first, isActive = tile.second, onClick = tile.third, themeColor = themeColor, modifier = Modifier.weight(1f))
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        toggles.drop(3).take(3).forEach { tile ->
+                            QSTile(label = tile.first, isActive = tile.second, onClick = tile.third, themeColor = themeColor, modifier = Modifier.weight(1f))
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        toggles.drop(6).firstOrNull()?.let { tile ->
+                            QSTile(label = tile.first, isActive = tile.second, onClick = tile.third, themeColor = themeColor, modifier = Modifier.weight(0.33f))
+                        }
+                        Spacer(modifier = Modifier.weight(0.67f))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // --- 2. Brightness Slider & Volume Slider ---
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Star, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Slider(
+                            value = brightness,
+                            onValueChange = { viewModel.setBrightness(it) },
+                            colors = SliderDefaults.colors(
+                                thumbColor = themeColor,
+                                activeTrackColor = themeColor,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Favorite, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Slider(
+                            value = mediaVolume,
+                            onValueChange = { viewModel.setMediaVolume(it) },
+                            colors = SliderDefaults.colors(
+                                thumbColor = themeColor,
+                                activeTrackColor = themeColor,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // --- 3. Music Media Controller Widget inside Shade ---
+                val musicNotif = notifications.find { it.type == NotificationType.MUSIC }
+                if (musicNotif != null) {
+                    MediaControlShadeWidget(
+                        item = musicNotif,
+                        themeColor = themeColor,
+                        onPlayPause = { viewModel.togglePlayPauseMusic() },
+                        onPrev = { viewModel.skipPrevTrack() },
+                        onNext = { viewModel.skipNextTrack() }
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // --- 3. Music Media Controller Widget inside Shade ---
-        val musicNotif = notifications.find { it.type == NotificationType.MUSIC }
-        if (musicNotif != null) {
-            MediaControlShadeWidget(
-                item = musicNotif,
-                themeColor = themeColor,
-                onPlayPause = { viewModel.togglePlayPauseMusic() },
-                onPrev = { viewModel.skipPrevTrack() },
-                onNext = { viewModel.skipNextTrack() }
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-        }
-
-        // --- 4. Notifications Scrolling Stack ---
+        // --- 4. Notifications Scrolling Stack (nestedScroll handles fling-to-close) ---
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -209,7 +256,11 @@ fun NotificationShade(
         }
         Spacer(modifier = Modifier.height(6.dp))
 
-        Box(modifier = Modifier.weight(1f)) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .nestedScroll(shadeCloseConnection)
+        ) {
             val cleanNotifs = notifications.filter { it.type != NotificationType.MUSIC }
             if (cleanNotifs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -217,6 +268,7 @@ fun NotificationShade(
                 }
             } else {
                 LazyColumn(
+                    state = lazyListState,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
