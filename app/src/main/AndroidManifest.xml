@@ -59,7 +59,7 @@
         android:protectionLevel="signature" />
 
     <application
-        android:name="com.android.systemui.lite.SystemUIApplication"
+        android:name=".lite.SystemUIApplication"
         android:allowBackup="false"
         android:appComponentFactory="androidx.core.app.CoreComponentFactory"
         android:icon="@mipmap/ic_launcher"
@@ -67,13 +67,13 @@
         android:persistent="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MyApplication"
+        android:theme="@style/Theme.SystemUILite"
         android:directBootAware="true"
         tools:targetApi="36">
 
         <!-- Main SystemUI entry service - bound by system_server (matching AOSP package) -->
         <service
-            android:name="com.android.systemui.SystemUIService"
+            android:name=".SystemUIService"
             android:exported="true"
             android:enabled="true">
             <intent-filter>
@@ -83,13 +83,13 @@
 
         <!-- Overlay service for status bar and notification shade windows -->
         <service
-            android:name="com.android.systemui.lite.systemui.service.SystemUIOverlayService"
+            android:name=".lite.systemui.service.SystemUIOverlayService"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
 
         <!-- Notification Listener Service - receives real notifications from system -->
         <service
-            android:name="com.android.systemui.lite.systemui.notification.SystemNotificationListenerService"
+            android:name=".lite.systemui.notification.SystemNotificationListenerService"
             android:exported="true"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
@@ -99,10 +99,10 @@
 
         <!-- Configuration/debug activity - optional, can be removed for production -->
         <activity
-            android:name="com.android.systemui.lite.MainActivity"
+            android:name=".lite.MainActivity"
             android:exported="false"
             android:label="@string/app_name"
-            android:theme="@style/Theme.MyApplication"
+            android:theme="@style/Theme.SystemUILite"
             android:taskAffinity=""
             android:excludeFromRecents="true" />
 

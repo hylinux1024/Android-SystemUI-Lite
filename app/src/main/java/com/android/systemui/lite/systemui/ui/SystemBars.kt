@@ -1,54 +1,97 @@
 package com.android.systemui.lite.systemui.ui
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.*
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.*
-import androidx.compose.ui.input.pointer.util.VelocityTracker
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import com.android.systemui.lite.systemui.model.*
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.android.systemui.lite.systemui.model.BatteryPercentageStyle
+import com.android.systemui.lite.systemui.model.ClockPosition
+import com.android.systemui.lite.systemui.model.NavigationMode
+import com.android.systemui.lite.systemui.model.NotificationItem
+import com.android.systemui.lite.systemui.model.NotificationType
 import com.android.systemui.lite.systemui.viewmodel.SystemUIViewModel
-import kotlin.math.pow
 
 @Composable
-fun SimulatedPhone(
+fun SystemBars(
     viewModel: SystemUIViewModel,
     modifier: Modifier = Modifier
 ) {
@@ -205,7 +248,7 @@ fun SimulatedPhone(
         }
 
         // --- 5. Custom Status Bar (Always at top) ---
-        CustomStatusBar(
+        StatusBar(
             heightDp = statusBarHeight,
             iconSizeDp = statusBarIconSize,
             clockPosition = clockPosition,
@@ -343,7 +386,7 @@ fun SimulatedPhone(
 // STATUS BAR IMPLEMENTATION
 // ==========================================
 @Composable
-fun CustomStatusBar(
+fun StatusBar(
     heightDp: Int,
     iconSizeDp: Int,
     clockPosition: ClockPosition,
@@ -359,7 +402,10 @@ fun CustomStatusBar(
     themeColor: Color,
     safeInsetLeft: Int = 0,
     safeInsetRight: Int = 0,
-    onShadeToggle: () -> Unit
+    onShadeToggle: () -> Unit,
+    onShadeDragUpdate: ((Float) -> Unit)? = null,
+    onShadeDragEnd: ((Float) -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
     var totalDragY by remember { mutableStateOf(0f) }
     var totalDragX by remember { mutableStateOf(0f) }
@@ -380,7 +426,7 @@ fun CustomStatusBar(
     val endPadding = maxOf(defaultHorizontalPadding, safeRightDp)
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(statusBarHeight)
             .background(Color.Transparent)
@@ -393,16 +439,10 @@ fun CustomStatusBar(
                     onDragEnd = {
                         val absY = kotlin.math.abs(totalDragY)
                         val absX = kotlin.math.abs(totalDragX)
-                        // Lower thresholds for better responsiveness
                         if (absY < 8f && absX < 8f) {
-                            // Tap: toggle shade
                             onShadeToggle()
-                        } else if (totalDragY > 10f) {
-                            // Swipe down: Open shade (more sensitive)
-                            onShadeToggle()
-                        } else if (totalDragY < -10f) {
-                            // Swipe up: Close shade (more sensitive)
-                            onShadeToggle()
+                        } else {
+                            onShadeDragEnd?.invoke(totalDragY)
                         }
                     },
                     onDragCancel = {},
@@ -410,6 +450,9 @@ fun CustomStatusBar(
                         change.consume()
                         totalDragY += dragAmount.y
                         totalDragX += dragAmount.x
+                        if (totalDragY > 0) {
+                            onShadeDragUpdate?.invoke(totalDragY)
+                        }
                     }
                 )
             }
@@ -1254,21 +1297,6 @@ fun RecentsOverview(
 // NOTIFICATION SHADE PANEL
 // ==========================================
 
-/**
- * Panel expansion states (matches AOSP ShadeExpansionStateManager)
- */
-private const val STATE_CLOSED = 0
-private const val STATE_OPENING = 1
-private const val STATE_OPEN = 2
-
-/**
- * Fling animation configuration (matches AOSP FlingAnimationUtils)
- */
-private const val FLING_MIN_VELOCITY = 50f  // px/sec
-private const val FLING_DURATION = 600L     // ms
-private const val SPRING_BACK_DURATION = 400L
-private const val OVERSHOOT_AMOUNT = 0.15f  // 15% overshoot
-
 @Composable
 fun NotificationShade(
     viewModel: SystemUIViewModel,
@@ -1288,199 +1316,30 @@ fun NotificationShade(
     onClearAllNotifications: () -> Unit,
     onCloseShade: () -> Unit = { viewModel.toggleNotificationShade() }
 ) {
-    // Panel state management (AOSP-style)
-    var panelState by remember { mutableIntStateOf(STATE_OPENING) }
-    var expandedHeight by remember { mutableFloatStateOf(0f) }
-    var expandedFraction by remember { mutableFloatStateOf(0f) }
-    var isTracking by remember { mutableStateOf(false) }
-    var isFlinging by remember { mutableStateOf(false) }
-
-    // Animation state
-    val heightAnimator = remember { Animatable(0f) }
-    val alphaAnimator = remember { Animatable(1f) }
-    val scope = rememberCoroutineScope()
-
-    // Gesture state
-    var initialTouchY by remember { mutableFloatStateOf(0f) }
-    var initialOffsetOnTouch by remember { mutableFloatStateOf(0f) }
-    var touchSlopExceeded by remember { mutableStateOf(false) }
-
-    // Velocity tracker (AOSP-style)
-    val velocityTracker = remember { VelocityTracker() }
-
-    // Screen dimensions
-    val configuration = LocalConfiguration.current
-    val density = LocalDensity.current
-    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.roundToPx() }
-    val maxPanelHeight = screenHeightPx * 0.85f  // Max 85% of screen
-
-    // Touch slop
-    val touchSlop = with(density) { 8.dp.roundToPx() }
-
-    // Update expanded fraction when height changes
-    LaunchedEffect(expandedHeight) {
-        expandedFraction = (expandedHeight / maxPanelHeight).coerceIn(0f, 1f)
-    }
-
-    // Alpha fade during close (AOSP-style: pow(fraction, 0.75))
-    val contentAlpha = remember(expandedFraction) {
-        if (expandedFraction < 0.3f) {
-            (expandedFraction / 0.3f).pow(0.75f)
-        } else {
-            1f
-        }
-    }
-
-    // Fling decision logic (matches AOSP flingExpands)
-    fun shouldExpand(velocity: Float, currentPosition: Float): Boolean {
-        // If velocity is significant, decide based on direction
-        if (kotlin.math.abs(velocity) > FLING_MIN_VELOCITY) {
-            return velocity > 0  // Positive = downward = expand
-        }
-        // Slow gesture: decide based on position
-        return currentPosition > maxPanelHeight * 0.5f
-    }
-
-    // Start fling animation (matches AOSP flingToHeight)
-    fun fling(velocity: Float, expand: Boolean) {
-        isFlinging = true
-        val targetHeight = if (expand) maxPanelHeight else 0f
-
-        // Calculate overshoot for expanding
-        val overshoot = if (expand && velocity > 0) {
-            val velocityFactor = (velocity / (maxPanelHeight * 2f)).coerceIn(0f, 1f)
-            OVERSHOOT_AMOUNT * velocityFactor
-        } else {
-            0f
-        }
-
-        val targetWithOvershoot = targetHeight + (maxPanelHeight * overshoot)
-
-        scope.launch {
-            try {
-                heightAnimator.snapTo(expandedHeight)
-                heightAnimator.animateTo(
-                    targetValue = targetWithOvershoot,
-                    animationSpec = tween(
-                        durationMillis = FLING_DURATION.toInt(),
-                        easing = FastOutSlowInEasing
-                    )
-                ) {
-                    expandedHeight = value
-                }
-
-                // Spring back if overshoot
-                if (overshoot > 0) {
-                    heightAnimator.animateTo(
-                        targetValue = targetHeight,
-                        animationSpec = tween(
-                            durationMillis = SPRING_BACK_DURATION.toInt(),
-                            easing = FastOutSlowInEasing
-                        )
-                    ) {
-                        expandedHeight = value
-                    }
-                }
-            } finally {
-                isFlinging = false
-                if (expandedHeight <= 0f) {
-                    panelState = STATE_CLOSED
-                    onCloseShade()
-                } else if (expandedHeight >= maxPanelHeight) {
-                    panelState = STATE_OPEN
-                }
-            }
-        }
-    }
-
-    // Spring back animation (matches AOSP springBack)
-    fun springBack() {
-        scope.launch {
-            heightAnimator.animateTo(
-                targetValue = maxPanelHeight,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessLow
-                )
-            ) {
-                expandedHeight = value
-            }
-        }
-    }
-
-    // Set expanded height (matches AOSP setExpandedHeightInternal)
-    fun setExpandedHeight(h: Float) {
-        expandedHeight = h.coerceIn(0f, maxPanelHeight)
-        expandedFraction = (expandedHeight / maxPanelHeight).coerceIn(0f, 1f)
-    }
-
-    // Entrance animation - start from 0
-    LaunchedEffect(Unit) {
-        expandedHeight = 0f
-        panelState = STATE_CLOSED
-    }
-
-    // Panel content - slides down from top, clipped to expanded height
-    Box(
+    // Panel content — simple Column hierarchy for correct layout
+    Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(with(density) { (expandedHeight / density.density).dp })
-            .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
-            .background(Color.Black.copy(alpha = 0.95f))
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.92f))
+            .padding(16.dp)
             .pointerInput(Unit) {
+                var totalDragY = 0f
                 detectDragGestures(
-                    onDragStart = {
-                        initialTouchY = it.y
-                        initialOffsetOnTouch = expandedHeight
-                        touchSlopExceeded = false
-                        isTracking = true
-
-                        // Cancel any ongoing fling
-                        if (isFlinging) {
-                            scope.launch {
-                                heightAnimator.stop()
-                                isFlinging = false
-                            }
-                        }
-                    },
+                    onDragStart = { totalDragY = 0f },
                     onDragEnd = {
-                        // Fling decision (AOSP-style)
-                        val expand = shouldExpand(0f, expandedHeight)
-                        fling(0f, expand)
-                        isTracking = false
-                    },
-                    onDragCancel = {
-                        // Snap back on cancel
-                        scope.launch {
-                            heightAnimator.animateTo(
-                                targetValue = maxPanelHeight,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMedium
-                                )
-                            ) {
-                                expandedHeight = value
-                            }
+                        if (totalDragY < -40f) {
+                            onCloseShade()
                         }
-                        isTracking = false
                     },
+                    onDragCancel = {},
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        // Drag down increases height (panel slides down)
-                        val newHeight = expandedHeight + dragAmount.y
-                        setExpandedHeight(newHeight)
+                        totalDragY += dragAmount.y
                     }
                 )
             }
-            .padding(top = 56.dp, bottom = 64.dp)
-            .padding(horizontal = 16.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .alpha(contentAlpha)
-        ) {
-            // --- 1. Quick Settings Grid (3x3) ---
+        // --- 1. Quick Settings Grid (3x3) ---
             val toggles = listOf(
                 Triple("Wi-Fi", isWifiOn, { viewModel.toggleWifi() }),
                 Triple("Bluetooth", isBluetoothOn, { viewModel.toggleBluetooth() }),
@@ -1508,21 +1367,17 @@ fun NotificationShade(
             }
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Multi-column row grid for QS
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Row 1
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     toggles.take(3).forEach { tile ->
                         QSTile(label = tile.first, isActive = tile.second, onClick = tile.third, themeColor = themeColor, modifier = Modifier.weight(1f))
                     }
                 }
-                // Row 2
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     toggles.drop(3).take(3).forEach { tile ->
                         QSTile(label = tile.first, isActive = tile.second, onClick = tile.third, themeColor = themeColor, modifier = Modifier.weight(1f))
                     }
                 }
-                // Row 3 (Single remaining for alignment)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     toggles.drop(6).firstOrNull()?.let { tile ->
                         QSTile(label = tile.first, isActive = tile.second, onClick = tile.third, themeColor = themeColor, modifier = Modifier.weight(0.33f))
@@ -1535,7 +1390,6 @@ fun NotificationShade(
 
             // --- 2. Brightness Slider & Volume Slider ---
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Brightness Slider
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1552,7 +1406,6 @@ fun NotificationShade(
                         modifier = Modifier.weight(1f)
                     )
                 }
-                // Volume Slider
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1585,7 +1438,6 @@ fun NotificationShade(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
             }
-        }
 
         // --- 4. Notifications Scrolling Stack ---
         Row(
@@ -1604,7 +1456,7 @@ fun NotificationShade(
         }
         Spacer(modifier = Modifier.height(6.dp))
 
-        Box(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
+        Box(modifier = Modifier.weight(1f)) {
             val cleanNotifs = notifications.filter { it.type != NotificationType.MUSIC }
             if (cleanNotifs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

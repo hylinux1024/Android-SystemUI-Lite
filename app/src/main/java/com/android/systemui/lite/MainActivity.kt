@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.android.systemui.lite.ui.theme.MyApplicationTheme
-import com.android.systemui.lite.systemui.ui.SimulatedPhone
+import com.android.systemui.lite.systemui.ui.SystemBars
 import com.android.systemui.lite.systemui.ui.DeveloperConfigPanel
 import com.android.systemui.lite.systemui.viewmodel.SystemUIViewModel
 
@@ -59,7 +59,7 @@ class MainActivity : ComponentActivity() {
                       .fillMaxHeight(),
                   contentAlignment = Alignment.Center
                 ) {
-                  SimulatedPhone(
+                  SystemBars(
                     viewModel = viewModel,
                     modifier = Modifier.fillMaxHeight(0.95f)
                   )
@@ -144,7 +144,7 @@ class MainActivity : ComponentActivity() {
                   contentAlignment = Alignment.Center
                 ) {
                   if (currentPanelTab == 0) {
-                    SimulatedPhone(
+                    SystemBars(
                       viewModel = viewModel,
                       modifier = Modifier.fillMaxHeight()
                     )

@@ -17,7 +17,7 @@
 set -e
 
 APK_PATH="app/build/outputs/apk/debug/SystemUI.apk"
-DEVICE_PATH="/system_ext/priv-app/SystemUI/SystemUI.apk"
+DEVICE_PATH="/system/priv-app/SystemUI/SystemUI.apk"
 
 # Colors for output
 RED='\033[0;31m'

@@ -14,23 +14,15 @@ import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -43,28 +35,24 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.android.systemui.lite.systemui.ui.CustomStatusBar
+import com.android.systemui.lite.systemui.ui.StatusBar
 import com.android.systemui.lite.systemui.ui.NotificationShade
 import com.android.systemui.lite.systemui.viewmodel.SystemUIViewModel
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-/**
- * SystemUIOverlayService manages the actual system windows for the status bar
- * and notification shade.
- *
- * This service creates two system windows:
- * 1. Status bar window (TYPE_STATUS_BAR) at the top of the screen
- * 2. Navigation bar window (TYPE_NAVIGATION_BAR) at the bottom of the screen
- *
- * As a system app with sharedUserId=android.uid.systemui, we can use these
- * window types directly.
- */
 class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
 
     companion object {
         private const val TAG = "SystemUIOverlayService"
         private const val CHANNEL_ID = "systemui_service_channel"
         private const val NOTIFICATION_ID = 9110
+        private const val DRAG_MULTIPLIER = 1f
 
         var isRunning = false
             private set
@@ -85,7 +73,6 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
         }
     }
 
-    // WindowManager for creating system windows
     private lateinit var windowManager: WindowManager
     private var statusBarView: ComposeView? = null
     private var navBarView: ComposeView? = null
@@ -93,14 +80,21 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
 
     private val viewModel by lazy { SystemUIViewModel.instance }
 
-    // Display cutout info
+    // Shared shade progress (0f = closed, 1f = fully open) — observed by shade window
+    private val _shadeProgress = MutableStateFlow(0f)
+    val shadeProgress: StateFlow<Float> = _shadeProgress
+
+    // Whether the shade window is currently added to WindowManager
+    private var isShadeWindowAdded = false
+    private var shadeAnimJob: Job? = null
+
     data class CutoutInfo(
         val safeInsetLeft: Int = 0,
         val safeInsetRight: Int = 0,
         val cutoutRect: Rect = Rect()
     )
-    private val _cutoutInfo = kotlinx.coroutines.flow.MutableStateFlow(CutoutInfo())
-    private val cutoutInfo: kotlinx.coroutines.flow.StateFlow<CutoutInfo> = _cutoutInfo
+    private val _cutoutInfo = MutableStateFlow(CutoutInfo())
+    private val cutoutInfo: StateFlow<CutoutInfo> = _cutoutInfo
 
     // --- Lifecycle & Jetpack Compose ViewTree Requirements ---
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -119,26 +113,23 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
         Log.d(TAG, "=== SystemUIOverlayService onCreate ===")
         isRunning = true
 
-        // Complete the ViewTree Lifecycle and SavedState bindings
         lifecycleRegistry.currentState = Lifecycle.State.INITIALIZED
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-        // Create notification channel FIRST (required for Android O+)
         createNotificationChannel()
 
-        // Start as foreground service to prevent system kill during boot
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
         Log.d(TAG, "Foreground service started")
 
-        // Create the status bar window
         initStatusBarWindow()
 
-        // Create the navigation bar window
         initNavBarWindow()
+
+        ensureShadeWindow()
 
         lifecycleRegistry.currentState = Lifecycle.State.STARTED
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
@@ -174,48 +165,43 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             .build()
     }
 
-    /**
-     * Create the status bar system window at the top of the screen.
-     */
+    // ---- Status bar window (small, TYPE_STATUS_BAR) ----
+
     private fun initStatusBarWindow() {
         Log.d(TAG, "initStatusBarWindow called")
-        val statusBarHeight = getStatusBarHeightPx()
-        Log.d(TAG, "Status bar height: ${statusBarHeight}px")
+        val statusBarHeightPx = getStatusBarHeightPx()
+        Log.d(TAG, "Status bar height: ${statusBarHeightPx}px")
 
-        // Try TYPE_STATUS_BAR first (requires INTERNAL_SYSTEM_WINDOW permission)
-        val params = createStatusBarLayoutParams(statusBarHeight)
+        val params = createStatusBarLayoutParams(statusBarHeightPx)
+
+        val screenHeightPx = resources.displayMetrics.heightPixels
+        val maxShadeOffsetPx = screenHeightPx.toFloat()
 
         statusBarView = ComposeView(this).apply {
             setupViewTreeOwners()
 
-            // Listen for window insets to detect display cutout
             setOnApplyWindowInsetsListener { view, windowInsets ->
                 val displayCutout = windowInsets.displayCutout
                 if (displayCutout != null) {
                     val cutoutRect = displayCutout.boundingRectTop
                     val screenWidth = resources.displayMetrics.widthPixels
                     val isCornerCutout = cutoutRect.left <= 0 || cutoutRect.right >= screenWidth
-
                     val safeLeft: Int
                     val safeRight: Int
                     if (isCornerCutout) {
-                        // Corner cutout: use cutout width as left/right padding
                         val cutoutWidth = cutoutRect.width()
                         safeLeft = maxOf(cutoutWidth, displayCutout.safeInsetLeft)
                         safeRight = maxOf(displayCutout.safeInsetRight, 0)
                     } else {
-                        // Center cutout: use safe insets
                         safeLeft = displayCutout.safeInsetLeft
                         safeRight = displayCutout.safeInsetRight
                     }
-                    Log.d(TAG, "Display cutout: rect=$cutoutRect, isCorner=$isCornerCutout, safeLeft=$safeLeft, safeRight=$safeRight")
                     _cutoutInfo.value = CutoutInfo(
                         safeInsetLeft = safeLeft,
                         safeInsetRight = safeRight,
                         cutoutRect = cutoutRect
                     )
                 } else {
-                    Log.d(TAG, "No display cutout")
                     _cutoutInfo.value = CutoutInfo()
                 }
                 view.onApplyWindowInsets(windowInsets)
@@ -239,7 +225,7 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                     val isTrafficActive = plugins.find { it.id == "traffic_indicator" }?.isEnabled == true
                     val currentCutout by cutoutInfo.collectAsState()
 
-                    CustomStatusBar(
+                    StatusBar(
                         heightDp = heightDp,
                         iconSizeDp = iconSize,
                         clockPosition = clockPosition,
@@ -255,8 +241,16 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                         themeColor = themeColor,
                         safeInsetLeft = currentCutout.safeInsetLeft,
                         safeInsetRight = currentCutout.safeInsetRight,
-                        onShadeToggle = {
-                            toggleNotificationShade()
+                        onShadeToggle = { toggleNotificationShade() },
+                        onShadeDragUpdate = { offset ->
+                            ensureShadeWindow()
+                            _shadeProgress.value =
+                                (offset * DRAG_MULTIPLIER / maxShadeOffsetPx).coerceIn(0f, 1f)
+                        },
+                        onShadeDragEnd = { offset ->
+                            if (kotlin.math.abs(offset) < 8f) return@StatusBar
+                            val shouldOpen = offset > maxShadeOffsetPx / 3f
+                            setShadeTarget(if (shouldOpen) 1f else 0f, animated = true)
                         }
                     )
                 }
@@ -266,9 +260,146 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
         addWindowWithFallback(statusBarView!!, params, "StatusBar")
     }
 
-    /**
-     * Create the navigation bar system window at the bottom of the screen.
-     */
+    // ---- Shade window (full-screen, TYPE_STATUS_BAR_PANEL) ----
+    private fun ensureShadeWindow() {
+        if (isShadeWindowAdded) return
+
+        @Suppress("DEPRECATION")
+        val windowType = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+
+        val statusBarHeightPx = getStatusBarHeightPx()
+        val screenHeightPx = resources.displayMetrics.heightPixels
+        val maxShadeOffsetPx = screenHeightPx.toFloat()
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            windowType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.FILL
+            setTitle("NotificationShade")
+            packageName = this@SystemUIOverlayService.packageName
+            setFitInsetsTypes(0)
+        }
+
+        shadeView = ComposeView(this).apply {
+            setupViewTreeOwners()
+            setContent {
+                val themeColor by viewModel.themeColor.collectAsState()
+                val isWifiOn by viewModel.isWifiOn.collectAsState()
+                val isBluetoothOn by viewModel.isBluetoothOn.collectAsState()
+                val isDoNotDisturb by viewModel.isDoNotDisturb.collectAsState()
+                val isFlashlightOn by viewModel.isFlashlightOn.collectAsState()
+                val isAirplaneMode by viewModel.isAirplaneMode.collectAsState()
+                val isAutoRotateOn by viewModel.isAutoRotateOn.collectAsState()
+                val isScreenRecording by viewModel.isScreenRecording.collectAsState()
+                val brightness by viewModel.brightness.collectAsState()
+                val mediaVolume by viewModel.mediaVolume.collectAsState()
+                val notifications by viewModel.notifications.collectAsState()
+                val plugins by viewModel.plugins.collectAsState()
+                val isResourceMonitorActive = plugins.find { it.id == "resource_monitor" }?.isEnabled == true
+                val progress by _shadeProgress.collectAsState()
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset {
+                            IntOffset(
+                                0,
+                                (-(maxShadeOffsetPx * (1f - progress))).toInt()
+                            )
+                        }
+                ) {
+                    NotificationShade(
+                        viewModel = viewModel,
+                        themeColor = themeColor,
+                        isWifiOn = isWifiOn,
+                        isBluetoothOn = isBluetoothOn,
+                        isDoNotDisturb = isDoNotDisturb,
+                        isFlashlightOn = isFlashlightOn,
+                        isAirplaneMode = isAirplaneMode,
+                        isAutoRotateOn = isAutoRotateOn,
+                        isScreenRecording = isScreenRecording,
+                        brightness = brightness,
+                        mediaVolume = mediaVolume,
+                        notifications = notifications,
+                        isResourceMonitorActive = isResourceMonitorActive,
+                        onDismissNotification = { viewModel.dismissNotification(it) },
+                        onClearAllNotifications = { viewModel.clearAllNotifications() },
+                        onCloseShade = { setShadeTarget(0f, animated = true) }
+                    )
+                }
+            }
+        }
+
+        try {
+            windowManager.addView(shadeView, params)
+            isShadeWindowAdded = true
+            Log.d(TAG, "Notification shade window added (TYPE_APPLICATION_OVERLAY)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add shade window: ${e.message}", e)
+        }
+    }
+
+    private fun closeNotificationShade() {
+        shadeView?.let { view ->
+            try {
+                windowManager.removeView(view)
+                Log.d(TAG, "Notification shade window removed")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to remove shade: ${e.message}", e)
+            }
+        }
+        shadeView = null
+        isShadeWindowAdded = false
+    }
+
+    fun toggleNotificationShade() {
+        Log.d(TAG, "toggleNotificationShade")
+        if (isShadeWindowAdded) {
+            setShadeTarget(0f, animated = true)
+        } else {
+            ensureShadeWindow()
+            setShadeTarget(1f, animated = true)
+        }
+    }
+
+    private fun setShadeTarget(target: Float, animated: Boolean) {
+        shadeAnimJob?.cancel()
+        val clampedTarget = target.coerceIn(0f, 1f)
+        if (!animated) {
+            _shadeProgress.value = clampedTarget
+            return
+        }
+        val from = _shadeProgress.value
+        val to = clampedTarget
+        shadeAnimJob = GlobalScope.launch {
+            val startTime = System.nanoTime()
+            val duration = 400_000_000L
+            while (isActive) {
+                val elapsed = System.nanoTime() - startTime
+                if (elapsed >= duration) {
+                    _shadeProgress.value = to
+                    break
+                }
+                val fraction = (elapsed.toFloat() / duration).coerceIn(0f, 1f)
+                val eased = 1f - (1f - fraction) * (1f - fraction) * (1f - fraction)
+                _shadeProgress.value = from + (to - from) * eased
+                delay(16)
+            }
+            if (_shadeProgress.value <= 0f) {
+                closeNotificationShade()
+            }
+        }
+    }
+
+    // ---- Navigation bar window ----
+
     private fun initNavBarWindow() {
         Log.d(TAG, "initNavBarWindow called")
         val navBarHeight = getNavigationBarHeightPx()
@@ -286,9 +417,9 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                     com.android.systemui.lite.systemui.ui.NavigationBar(
                         themeColor = themeColor,
                         navigationMode = navigationMode,
-                        onBack = { sendKeyEvent(4) },      // KEYCODE_BACK
-                        onHome = { sendKeyEvent(3) },      // KEYCODE_HOME
-                        onRecents = { sendKeyEvent(187) }  // KEYCODE_APP_SWITCH
+                        onBack = { sendKeyEvent(4) },
+                        onHome = { sendKeyEvent(3) },
+                        onRecents = { sendKeyEvent(187) }
                     )
                 }
             }
@@ -297,16 +428,14 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
         addWindowWithFallback(navBarView!!, params, "NavigationBar")
     }
 
-    /**
-     * Try to add a window with TYPE first, fall back to TYPE_APPLICATION_OVERLAY.
-     */
+    // ---- Helpers ----
+
     private fun addWindowWithFallback(view: View, primaryParams: WindowManager.LayoutParams, name: String) {
         try {
             windowManager.addView(view, primaryParams)
             Log.d(TAG, "$name window added successfully (${primaryParams.type})")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add $name with type ${primaryParams.type}: ${e.message}")
-            // Fallback to TYPE_APPLICATION_OVERLAY
             @Suppress("DEPRECATION")
             val fallbackParams = WindowManager.LayoutParams(
                 primaryParams.width,
@@ -350,7 +479,6 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
 
     @Suppress("DEPRECATION")
     private fun createNavBarLayoutParams(heightPx: Int): WindowManager.LayoutParams {
-        // TYPE_NAVIGATION_BAR = 2019 (hidden API, use integer value)
         val TYPE_NAVIGATION_BAR = 2019
         return WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -365,128 +493,6 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             setTitle("NavigationBar")
             packageName = packageName
             setFitInsetsTypes(0)
-        }
-    }
-
-    /**
-     * Toggles the notification shade overlay window.
-     */
-    fun toggleNotificationShade() {
-        Log.d(TAG, "toggleNotificationShade called")
-        if (shadeView != null) {
-            closeNotificationShade()
-        } else {
-            openNotificationShade()
-        }
-    }
-
-    private fun openNotificationShade() {
-        @Suppress("DEPRECATION")
-        val windowType = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            windowType,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.FILL
-        }
-
-        shadeView = ComposeView(this).apply {
-            setupViewTreeOwners()
-            setContent {
-                MaterialTheme {
-                    val themeColor by viewModel.themeColor.collectAsState()
-                    val isWifiOn by viewModel.isWifiOn.collectAsState()
-                    val isBluetoothOn by viewModel.isBluetoothOn.collectAsState()
-                    val isDoNotDisturb by viewModel.isDoNotDisturb.collectAsState()
-                    val isFlashlightOn by viewModel.isFlashlightOn.collectAsState()
-                    val isAirplaneMode by viewModel.isAirplaneMode.collectAsState()
-                    val isAutoRotateOn by viewModel.isAutoRotateOn.collectAsState()
-                    val isScreenRecording by viewModel.isScreenRecording.collectAsState()
-                    val brightness by viewModel.brightness.collectAsState()
-                    val mediaVolume by viewModel.mediaVolume.collectAsState()
-                    val notifications by viewModel.notifications.collectAsState()
-                    val plugins by viewModel.plugins.collectAsState()
-                    val isResourceMonitorActive = plugins.find { it.id == "resource_monitor" }?.isEnabled == true
-
-                    // Animation state for slide-in/out
-                    val animationProgress = remember { Animatable(0f) }
-                    val scope = rememberCoroutineScope()
-
-                    // Start entrance animation
-                    scope.launch {
-                        animationProgress.snapTo(0f)
-                        animationProgress.animateTo(
-                            targetValue = 1f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessLow
-                            )
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .offset { IntOffset(0, ((1f - animationProgress.value) * -100).toInt().dp.roundToPx()) }
-                    ) {
-                        NotificationShade(
-                            viewModel = viewModel,
-                            themeColor = themeColor,
-                            isWifiOn = isWifiOn,
-                            isBluetoothOn = isBluetoothOn,
-                            isDoNotDisturb = isDoNotDisturb,
-                            isFlashlightOn = isFlashlightOn,
-                            isAirplaneMode = isAirplaneMode,
-                            isAutoRotateOn = isAutoRotateOn,
-                            isScreenRecording = isScreenRecording,
-                            brightness = brightness,
-                            mediaVolume = mediaVolume,
-                            notifications = notifications,
-                            isResourceMonitorActive = isResourceMonitorActive,
-                            onDismissNotification = { viewModel.dismissNotification(it) },
-                            onClearAllNotifications = { viewModel.clearAllNotifications() },
-                            onCloseShade = {
-                                // Animate out then close
-                                scope.launch {
-                                    animationProgress.animateTo(
-                                        targetValue = 0f,
-                                        animationSpec = spring(
-                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                            stiffness = Spring.StiffnessHigh
-                                        )
-                                    )
-                                    closeNotificationShade()
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        try {
-            windowManager.addView(shadeView, params)
-            Log.d(TAG, "Notification shade overlay added")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to open notification shade: ${e.message}", e)
-        }
-    }
-
-    fun closeNotificationShade() {
-        shadeView?.let { view ->
-            try {
-                windowManager.removeView(view)
-                shadeView = null
-                Log.d(TAG, "Notification shade overlay removed")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to remove shade: ${e.message}", e)
-            }
         }
     }
 
@@ -514,14 +520,9 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
             0
         }
         Log.d(TAG, "NavigationBar height from resources: ${height}px")
-        // If height is 0 (gesture nav or resource not found), use a default 48dp
         return if (height > 0) height else (48 * resources.displayMetrics.density).toInt()
     }
 
-    /**
-     * Send a key event using the input shell command.
-     * Requires root or shell permissions.
-     */
     private fun sendKeyEvent(keyCode: Int) {
         Log.d(TAG, "Sending key event: $keyCode")
         try {
