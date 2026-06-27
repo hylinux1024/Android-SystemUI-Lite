@@ -58,11 +58,12 @@ fun StatusBar(
     safeInsetRight: Int = 0,
     onShadeToggle: () -> Unit,
     onShadeDragUpdate: ((Float) -> Unit)? = null,
-    onShadeDragEnd: ((Float) -> Unit)? = null,
+    onShadeDragEnd: ((totalDragY: Float, isFling: Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var totalDragY by remember { mutableStateOf(0f) }
     var totalDragX by remember { mutableStateOf(0f) }
+    var dragStartMs by remember { mutableStateOf(0L) }
 
     // Status bar dimensions matching AOSP SystemUI-Lite reference
     val statusBarHeight = 24.dp
@@ -89,6 +90,7 @@ fun StatusBar(
                     onDragStart = {
                         totalDragY = 0f
                         totalDragX = 0f
+                        dragStartMs = System.currentTimeMillis()
                     },
                     onDragEnd = {
                         val absY = kotlin.math.abs(totalDragY)
@@ -96,7 +98,10 @@ fun StatusBar(
                         if (absY < 8f && absX < 8f) {
                             onShadeToggle()
                         } else {
-                            onShadeDragEnd?.invoke(totalDragY)
+                            val elapsedMs = (System.currentTimeMillis() - dragStartMs).coerceAtLeast(1)
+                            val velocity = totalDragY / elapsedMs * 1000f
+                            val isFling = velocity > 800f && totalDragY > 40f
+                            onShadeDragEnd?.invoke(totalDragY, isFling)
                         }
                     },
                     onDragCancel = {},

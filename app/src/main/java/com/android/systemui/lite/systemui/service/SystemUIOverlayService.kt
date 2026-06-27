@@ -247,9 +247,10 @@ class SystemUIOverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, S
                             _shadeProgress.value =
                                 (offset * DRAG_MULTIPLIER / maxShadeOffsetPx).coerceIn(0f, 1f)
                         },
-                        onShadeDragEnd = { offset ->
+                        onShadeDragEnd = { offset, isFling ->
                             if (kotlin.math.abs(offset) < 8f) return@StatusBar
-                            val shouldOpen = offset > maxShadeOffsetPx / 3f
+                            val shouldOpen = if (isFling) offset > 120f
+                            else offset > maxShadeOffsetPx / 3f
                             setShadeTarget(if (shouldOpen) 1f else 0f, animated = true)
                         }
                     )

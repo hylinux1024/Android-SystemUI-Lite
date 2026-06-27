@@ -4,7 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,7 +53,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
@@ -83,23 +84,30 @@ fun NotificationShade(
     val lazyListState = rememberLazyListState()
     var accumCloseY by remember { mutableFloatStateOf(0f) }
 
+    // Unified close connection: handles nested scroll from both
+    // QS area (via scrollable) and notification list (via LazyColumn).
     val shadeCloseConnection = remember(lazyListState) {
         object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                val atTop = lazyListState.firstVisibleItemIndex == 0 &&
+            private fun isAtTop() =
+                lazyListState.firstVisibleItemIndex == 0 &&
                         lazyListState.firstVisibleItemScrollOffset == 0
-                if (atTop && available.y < 0) {
-                    accumCloseY += -available.y
-                    return Offset(0f, available.y)
+
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < 0) {
+                    val atTop = isAtTop()
+                    // Accumulate all upward scrolls. Only block (consume) if LazyColumn
+                    // is already at top — otherwise let LazyColumn scroll normally.
+                    if (atTop || source != NestedScrollSource.UserInput) {
+                        accumCloseY += -available.y
+                        return Offset(0f, available.y)
+                    }
                 }
                 accumCloseY = 0f
                 return Offset.Zero
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
-                val atTop = lazyListState.firstVisibleItemIndex == 0 &&
-                        lazyListState.firstVisibleItemScrollOffset == 0
-                if (atTop && available.y < 0 && accumCloseY > 120f) {
+                if (available.y < 0 && accumCloseY > 120f) {
                     onCloseShade()
                     accumCloseY = 0f
                     return available
@@ -110,31 +118,19 @@ fun NotificationShade(
         }
     }
 
+    // Single root Column with unified nestedScroll handler.
+    // QS area uses scrollable() to convert vertical drags into nested scroll events
+    // (Slider only consumes horizontal drags, so unaffected).
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.92f))
             .padding(16.dp)
+            .nestedScroll(shadeCloseConnection)
     ) {
-        // Upper section — QS, sliders, media. Swipe up here to close.
+        // Upper section — QS, sliders, media (vertical drags → nested scroll → close)
         Box(
-            modifier = Modifier
-                .pointerInput(Unit) {
-                    var totalDragY = 0f
-                    detectDragGestures(
-                        onDragStart = { totalDragY = 0f },
-                        onDragEnd = {
-                            if (totalDragY < -40f) {
-                                onCloseShade()
-                            }
-                        },
-                        onDragCancel = {},
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            totalDragY += dragAmount.y
-                        }
-                    )
-                }
+            modifier = Modifier.scrollable(rememberScrollState(), Orientation.Vertical)
         ) {
             Column {
                 // --- 1. Quick Settings Grid (3x3) ---
@@ -239,7 +235,7 @@ fun NotificationShade(
             }
         }
 
-        // --- 4. Notifications Scrolling Stack (nestedScroll handles fling-to-close) ---
+        // --- 4. Notifications Scrolling Stack ---
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -256,11 +252,7 @@ fun NotificationShade(
         }
         Spacer(modifier = Modifier.height(6.dp))
 
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .nestedScroll(shadeCloseConnection)
-        ) {
+        Box(modifier = Modifier.weight(1f)) {
             val cleanNotifs = notifications.filter { it.type != NotificationType.MUSIC }
             if (cleanNotifs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -353,7 +345,6 @@ fun MediaControlShadeWidget(
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Art
         Box(
             modifier = Modifier
                 .size(36.dp)
@@ -374,7 +365,6 @@ fun MediaControlShadeWidget(
             Text(item.artist, color = Color.White.copy(alpha = 0.6f), fontSize = 9.sp, maxLines = 1)
         }
 
-        // Media buttons
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
