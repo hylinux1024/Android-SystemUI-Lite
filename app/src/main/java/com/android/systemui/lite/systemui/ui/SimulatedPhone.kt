@@ -1433,7 +1433,8 @@ fun NotificationShade(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.92f * contentAlpha))
-            .offset { IntOffset(0, (maxPanelHeight - expandedHeight).toInt()) }
+            // Panel slides DOWN from top: offset = -maxHeight when closed, 0 when open
+            .offset { IntOffset(0, (expandedHeight - maxPanelHeight).toInt()) }
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = {
@@ -1476,6 +1477,7 @@ fun NotificationShade(
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
+                        // Drag down increases height (panel slides down)
                         val newHeight = expandedHeight + dragAmount.y
                         setExpandedHeight(newHeight)
                     }
