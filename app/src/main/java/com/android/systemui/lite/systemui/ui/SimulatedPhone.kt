@@ -1414,27 +1414,19 @@ fun NotificationShade(
         expandedFraction = (expandedHeight / maxPanelHeight).coerceIn(0f, 1f)
     }
 
-    // Entrance animation
+    // Entrance animation - start from 0
     LaunchedEffect(Unit) {
-        heightAnimator.snapTo(0f)
-        heightAnimator.animateTo(
-            targetValue = maxPanelHeight,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
-        ) {
-            expandedHeight = value
-        }
-        panelState = STATE_OPEN
+        expandedHeight = 0f
+        panelState = STATE_CLOSED
     }
 
+    // Panel content - slides down from top, clipped to expanded height
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.92f * contentAlpha))
-            // Panel slides DOWN from top: offset = -maxHeight when closed, 0 when open
-            .offset { IntOffset(0, (expandedHeight - maxPanelHeight).toInt()) }
+            .fillMaxWidth()
+            .height(with(density) { (expandedHeight / density.density).dp })
+            .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+            .background(Color.Black.copy(alpha = 0.95f))
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = {
@@ -1454,10 +1446,7 @@ fun NotificationShade(
                     onDragEnd = {
                         // Fling decision (AOSP-style)
                         val expand = shouldExpand(0f, expandedHeight)
-
-                        // Fling or snap back
                         fling(0f, expand)
-
                         isTracking = false
                     },
                     onDragCancel = {
