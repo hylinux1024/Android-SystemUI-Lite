@@ -154,9 +154,33 @@ class SystemUIViewModel : ViewModel() {
             }
         }
 
+        // Detect actual system navigation mode
+        detectNavigationMode()
+
         // Preload mock notifications
         resetNotifications()
         log("SystemUI", "SystemUIViewModel initialized and default state configured.")
+    }
+
+    private fun detectNavigationMode() {
+        try {
+            val context = SystemUIApplication.instance
+            val mode = android.provider.Settings.Secure.getInt(
+                context.contentResolver,
+                "navigation_mode",
+                0 // default to 3-button
+            )
+            val navMode = when (mode) {
+                0 -> NavigationMode.THREE_BUTTON
+                2 -> NavigationMode.GESTURES
+                else -> NavigationMode.THREE_BUTTON
+            }
+            _navigationMode.value = navMode
+            log("NavigationBarController", "Detected system navigation mode: $mode -> $navMode")
+        } catch (e: Exception) {
+            log("NavigationBarController", "Failed to detect navigation mode: ${e.message}")
+            _navigationMode.value = NavigationMode.THREE_BUTTON
+        }
     }
 
     // Toggle Quick Settings Tiles

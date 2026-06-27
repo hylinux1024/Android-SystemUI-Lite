@@ -1640,14 +1640,14 @@ fun ThreeButtonNavigationBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Back - use Box with click instead of IconButton
+        // Back button (triangle)
         Box(
             modifier = Modifier
                 .size(48.dp)
                 .clickable { onBack() },
             contentAlignment = Alignment.Center
         ) {
-            Canvas(modifier = Modifier.size(14.dp)) {
+            Canvas(modifier = Modifier.size(20.dp)) {
                 val path = Path().apply {
                     moveTo(size.width, 0f)
                     lineTo(0f, size.height / 2)
@@ -1657,28 +1657,28 @@ fun ThreeButtonNavigationBar(
                 drawPath(path = path, color = Color.White)
             }
         }
-        // Home - use Box with click instead of IconButton
+        // Home button (circle)
         Box(
             modifier = Modifier
                 .size(48.dp)
                 .clickable { onHome() },
             contentAlignment = Alignment.Center
         ) {
-            Canvas(modifier = Modifier.size(14.dp)) {
-                drawCircle(color = Color.White, style = Stroke(width = 1.5.dp.toPx()))
+            Canvas(modifier = Modifier.size(20.dp)) {
+                drawCircle(color = Color.White, style = Stroke(width = 2.dp.toPx()))
             }
         }
-        // Recents - use Box with click instead of IconButton
+        // Recents button (square)
         Box(
             modifier = Modifier
                 .size(48.dp)
                 .clickable { onRecents() },
             contentAlignment = Alignment.Center
         ) {
-            Canvas(modifier = Modifier.size(12.dp)) {
+            Canvas(modifier = Modifier.size(18.dp)) {
                 drawRect(
                     color = Color.White,
-                    style = Stroke(width = 1.5.dp.toPx()),
+                    style = Stroke(width = 2.dp.toPx()),
                     size = Size(size.width, size.height)
                 )
             }
