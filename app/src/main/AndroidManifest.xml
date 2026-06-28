@@ -85,14 +85,10 @@
         </service>
 
         <!-- Notification Listener Service - receives real notifications from system -->
+        <!-- No intent-filter: registered programmatically via registerAsSystemService() (AOSP pattern) -->
         <service
             android:name=".lite.notification.SystemNotificationListenerService"
-            android:exported="true"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
+            android:exported="false" />
 
         <!-- Built-in static wallpaper engine - renders system wallpaper behind all windows -->
         <service

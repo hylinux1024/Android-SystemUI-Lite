@@ -1,6 +1,7 @@
 package com.android.systemui.lite
 
 import android.app.Application
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -10,6 +11,7 @@ import com.android.systemui.lite.core.ShadeCoreStartable
 import com.android.systemui.lite.core.StatusBarCoreStartable
 import com.android.systemui.lite.di.initKoin
 import com.android.systemui.lite.di.destroyKoin
+import com.android.systemui.lite.notification.SystemNotificationListenerService
 import com.android.systemui.lite.plugins.PluginManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -106,6 +108,18 @@ class SystemUIApplication : Application() {
             sorted.forEach { (cls, startable) ->
                 startable.onBootCompleted()
             }
+        }
+
+        // Start the notification listener service manually to ensure onCreate() fires.
+        // In AOSP this is triggered by registerAsSystemService() inside CoreStartable.start(),
+        // but since we use the manifest intent-filter approach, we need to kick-start it.
+        try {
+            val notifIntent = Intent(this, SystemNotificationListenerService::class.java)
+            startService(notifIntent)
+            logSystemEvent(TAG, "SystemNotificationListenerService startService called")
+        } catch (e: Exception) {
+            logSystemEvent(TAG, "ERROR starting SystemNotificationListenerService: ${e.message}")
+            Log.e(TAG, "Error starting SystemNotificationListenerService", e)
         }
 
         logSystemEvent(TAG, "Bootstrap completed. All core services started.")

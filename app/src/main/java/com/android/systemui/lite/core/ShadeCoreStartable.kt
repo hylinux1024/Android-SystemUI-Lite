@@ -19,6 +19,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.android.systemui.lite.CoreStartable
+import com.android.systemui.lite.data.NotificationProvider
 import com.android.systemui.lite.data.WallpaperProvider
 import com.android.systemui.lite.ui.NotificationShade
 import kotlinx.coroutines.CoroutineScope
@@ -46,6 +47,9 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     }
     private val wp by lazy {
         GlobalContext.get().get<WallpaperProvider>()
+    }
+    private val notificationRepo by lazy {
+        GlobalContext.get().get<NotificationProvider>()
     }
 
     private var shadeView: ComposeView? = null
@@ -162,6 +166,8 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                     val autoRotateOn by sp.autoRotateEnabled.collectAsState()
                     val progress by _shadeProgress.collectAsState()
                     val wallpaperColors by wp.wallpaperColors.collectAsState()
+                    val shadeNotifications by notificationRepo.notifications.collectAsState()
+                    val listenerConnected by notificationRepo.isConnected.collectAsState()
 
                     Box(
                         modifier = Modifier
@@ -181,7 +187,8 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                             isScreenRecording = false,
                             brightness = brightness / 255f,
                             mediaVolume = mediaVolume / 100f,
-                            notifications = emptyList(),
+                            notifications = shadeNotifications,
+                            listenerConnected = listenerConnected,
                             isResourceMonitorActive = false,
                             statusBarHeightDp = 28,
                             onToggleWifi = { sp.toggleWifi() },
@@ -193,8 +200,12 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                             onToggleScreenRecording = {},
                             onSetBrightness = { sp.setBrightness((it * 255).toInt()) },
                             onSetMediaVolume = { sp.setMediaVolume((it * 100).toInt()) },
-                            onDismissNotification = {},
-                            onClearAllNotifications = {},
+                            onDismissNotification = { id ->
+                                notificationRepo.dismissNotification(id.toString())
+                            },
+                            onClearAllNotifications = {
+                                notificationRepo.clearAllNotifications()
+                            },
                             onCloseShade = { animateShadeTo(0f) },
                             onPlayPauseMusic = {},
                             onPrevTrack = {},

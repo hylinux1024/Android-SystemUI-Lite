@@ -73,6 +73,7 @@ fun NotificationShade(
     brightness: Float,
     mediaVolume: Float,
     notifications: List<NotificationItem>,
+    listenerConnected: Boolean = true,
     isResourceMonitorActive: Boolean,
     statusBarHeightDp: Int,
     onToggleWifi: () -> Unit,
@@ -213,7 +214,20 @@ fun NotificationShade(
                         .scrollable(rememberScrollState(), Orientation.Vertical),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No recent notifications", color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            if (listenerConnected) "No recent notifications" else "Listener not connected",
+                            color = Color.White.copy(alpha = 0.3f),
+                            fontSize = 11.sp
+                        )
+                        if (!listenerConnected) {
+                            Text(
+                                "Check logcat: SystemNotificationListener",
+                                color = Color(0xFFFF6B6B).copy(alpha = 0.5f),
+                                fontSize = 9.sp
+                            )
+                        }
+                    }
                 }
             } else {
                 LazyColumn(state = lazyListState, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
