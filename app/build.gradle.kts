@@ -1,5 +1,3 @@
-import java.io.File
-
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -51,36 +49,13 @@ android {
   testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
-// Copy and rename APK to fixed output path using exec
-tasks.register("renameDebugApk") {
-  description = "Rename debug APK to SystemUI.apk"
-  dependsOn("packageDebug")
-  val buildDirectory = layout.buildDirectory
-  doLast {
-    val source = buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
-    val destDir = buildDirectory.dir("outputs/apk/debug").get().asFile
-    val dest = File(destDir, "SystemUI.apk")
-    if (source.exists()) {
-      source.copyTo(dest, overwrite = true)
-      println("APK renamed to: ${dest.absolutePath}")
+androidComponents {
+  onVariants(selector().all()) { variant ->
+    variant.outputs.forEach { output ->
+      (output as com.android.build.api.variant.impl.VariantOutputImpl).outputFileName =
+          "SystemUI.apk"
     }
   }
-}
-
-tasks.register("renameReleaseApk") {
-  description = "Rename release APK to SystemUI.apk"
-  dependsOn("packageRelease")
-  val buildDirectory = layout.buildDirectory
-  doLast {
-    val source = buildDirectory.file("outputs/apk/release/app-release-unsigned.apk").get().asFile
-    val destDir = buildDirectory.dir("outputs/apk/release").get().asFile
-    val dest = File(destDir, "SystemUI.apk")
-    if (source.exists()) {
-      source.copyTo(dest, overwrite = true)
-      println("APK renamed to: ${dest.absolutePath}")
-    }
-  }
-
 }
 
 dependencies {
