@@ -50,6 +50,9 @@
     <uses-permission android:name="android.permission.SU" />
     <uses-permission android:name="android.permission.ROOT" />
 
+    <!-- Wallpaper: SET_WALLPAPER needed for ImageWallpaper to clear/reset wallpaper -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+
     <!-- Custom permissions -->
     <permission
         android:name="com.android.systemui.permission.SELF"
@@ -90,6 +93,13 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- Built-in static wallpaper engine - renders system wallpaper behind all windows -->
+        <service
+            android:name=".wallpapers.ImageWallpaper"
+            android:singleUser="true"
+            android:permission="android.permission.BIND_WALLPAPER"
+            android:exported="true" />
 
         <!-- Configuration/debug activity - optional, can be removed for production -->
         <activity

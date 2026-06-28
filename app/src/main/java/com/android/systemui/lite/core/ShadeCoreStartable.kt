@@ -19,6 +19,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.android.systemui.lite.CoreStartable
+import com.android.systemui.lite.data.WallpaperProvider
 import com.android.systemui.lite.ui.NotificationShade
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,9 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     private val sp by lazy {
         GlobalContext.get().get<com.android.systemui.lite.data.SystemStateProvider>()
     }
+    private val wp by lazy {
+        GlobalContext.get().get<WallpaperProvider>()
+    }
 
     private var shadeView: ComposeView? = null
     private var isShadeWindowAdded = false
@@ -55,6 +59,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     override fun start() {
         Log.d(TAG, "Starting ShadeCoreStartable...")
         windowHost.start()
+        wp.start()
         Log.d(TAG, "ShadeCoreStartable started")
     }
 
@@ -66,6 +71,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
         shadeAnimJob?.cancel()
         scope.cancel()
         closeShade()
+        wp.stop()
         windowHost.destroy()
     }
 
@@ -155,6 +161,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                     val flashlightOn by sp.flashlightEnabled.collectAsState()
                     val autoRotateOn by sp.autoRotateEnabled.collectAsState()
                     val progress by _shadeProgress.collectAsState()
+                    val wallpaperColors by wp.wallpaperColors.collectAsState()
 
                     Box(
                         modifier = Modifier
@@ -164,7 +171,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                             }
                     ) {
                         NotificationShade(
-                            themeColor = androidx.compose.ui.graphics.Color(0xFF00ADB5),
+                            themeColor = wallpaperColors.primary,
                             isWifiOn = connectivity.wifiEnabled,
                             isBluetoothOn = connectivity.bluetoothEnabled,
                             isDoNotDisturb = connectivity.dndEnabled,
