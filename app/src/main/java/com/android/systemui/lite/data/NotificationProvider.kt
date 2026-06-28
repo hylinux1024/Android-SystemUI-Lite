@@ -37,7 +37,6 @@ class NotificationProvider {
     // --- Back-reference to the listener service for dismiss/clear ---
     interface ListenerCallbacks {
         fun cancelNotification(key: String)
-        fun cancelAllNotifications()
     }
 
     @Volatile
@@ -84,6 +83,9 @@ class NotificationProvider {
     }
 
     fun clearAllNotifications() {
-        listenerCallbacks?.cancelAllNotifications()
+        val callbacks = listenerCallbacks ?: return
+        val clearable = _notifications.value.filter { it.isClearable }
+        Log.d(TAG, "clearAllNotifications: clearing ${clearable.size} of ${_notifications.value.size}")
+        clearable.forEach { callbacks.cancelNotification(it.id.toString()) }
     }
 }

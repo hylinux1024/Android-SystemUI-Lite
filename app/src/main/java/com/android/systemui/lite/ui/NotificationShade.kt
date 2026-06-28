@@ -88,6 +88,7 @@ fun NotificationShade(
     onDismissNotification: (Any) -> Unit,
     onClearAllNotifications: () -> Unit,
     onCloseShade: () -> Unit,
+    onNotificationClick: (NotificationItem) -> Unit,
     onPlayPauseMusic: () -> Unit,
     onPrevTrack: () -> Unit,
     onNextTrack: () -> Unit,
@@ -201,7 +202,10 @@ fun NotificationShade(
         // Notifications
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Notifications", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Text("Clear All", color = themeColor, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onClearAllNotifications() })
+            val hasClearable = notifications.any { it.type != NotificationType.MUSIC && it.isClearable }
+            if (hasClearable) {
+                Text("Clear All", color = themeColor, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onClearAllNotifications() })
+            }
         }
         Spacer(Modifier.height(6.dp))
 
@@ -232,7 +236,7 @@ fun NotificationShade(
             } else {
                 LazyColumn(state = lazyListState, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
                     items(cleanNotifs, key = { it.id }) { item ->
-                        ShadeNotificationCard(item, themeColor, { onDismissNotification(item.id) })
+                        ShadeNotificationCard(item, themeColor, { onDismissNotification(item.id) }, { onNotificationClick(item) })
                     }
                 }
             }
@@ -282,9 +286,20 @@ fun MediaControlShadeWidget(item: NotificationItem, themeColor: Color, onPlayPau
 }
 
 @Composable
-fun ShadeNotificationCard(item: NotificationItem, themeColor: Color, onDismiss: () -> Unit) {
-    Row(Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-        .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+fun ShadeNotificationCard(item: NotificationItem, themeColor: Color, onDismiss: () -> Unit, onClick: () -> Unit) {
+    val cardModifier = if (item.contentIntent != null) {
+        Modifier.clickable { onClick() }
+    } else {
+        Modifier
+    }
+    Row(
+        cardModifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Box(Modifier.size(24.dp).background(themeColor.copy(alpha = 0.15f), CircleShape), contentAlignment = Alignment.Center) {
             Icon(imageVector = when (item.type) {
                 NotificationType.MESSAGE -> Icons.Default.Favorite; NotificationType.EMAIL -> Icons.Default.Email
@@ -299,7 +314,9 @@ fun ShadeNotificationCard(item: NotificationItem, themeColor: Color, onDismiss: 
             Text(item.title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(item.text, color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        Icon(Icons.Default.Close, "Dismiss", tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp).clickable { onDismiss() })
+        if (item.isClearable) {
+            Icon(Icons.Default.Close, "Dismiss", tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp).clickable { onDismiss() })
+        }
     }
 }
 

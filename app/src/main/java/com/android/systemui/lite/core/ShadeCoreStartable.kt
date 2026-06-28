@@ -2,6 +2,7 @@ package com.android.systemui.lite.core
 
 import android.content.Context
 import android.content.res.Configuration
+import android.app.PendingIntent
 import android.graphics.PixelFormat
 import android.util.Log
 import android.view.Gravity
@@ -207,6 +208,17 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                                 notificationRepo.clearAllNotifications()
                             },
                             onCloseShade = { animateShadeTo(0f) },
+                            onNotificationClick = { item ->
+                                try {
+                                    item.contentIntent?.send()
+                                } catch (e: PendingIntent.CanceledException) {
+                                    Log.e(TAG, "Failed to send contentIntent: ${e.message}", e)
+                                }
+                                animateShadeTo(0f)
+                                if (item.autoCancel) {
+                                    notificationRepo.dismissNotification(item.id.toString())
+                                }
+                            },
                             onPlayPauseMusic = {},
                             onPrevTrack = {},
                             onNextTrack = {}

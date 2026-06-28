@@ -1,5 +1,6 @@
 package com.android.systemui.lite.model
 
+import android.app.PendingIntent
 import android.graphics.drawable.Drawable
 import androidx.compose.ui.graphics.Color
 
@@ -40,7 +41,12 @@ data class NotificationItem(
 
     // State flags
     val isRead: Boolean = false,
-    val isDismissed: Boolean = false
+    val isDismissed: Boolean = false,
+    val isClearable: Boolean = true,
+    val autoCancel: Boolean = true,
+
+    // Interaction
+    val contentIntent: PendingIntent? = null
 ) {
     companion object {
         /**

@@ -38,7 +38,6 @@ class SystemNotificationListenerService : NotificationListenerService() {
         notificationProvider.appendLog("onCreate() - package=$packageName uid=${android.os.Process.myUid()}")
         notificationProvider.listenerCallbacks = object : NotificationProvider.ListenerCallbacks {
             override fun cancelNotification(key: String) = this@SystemNotificationListenerService.cancelNotification(key)
-            override fun cancelAllNotifications() = this@SystemNotificationListenerService.cancelAllNotifications()
         }
         registerAsSystemService()
     }
@@ -174,7 +173,10 @@ class SystemNotificationListenerService : NotificationListenerService() {
             timestampMillis = sbn.postTime,
             type = type,
             isRead = false,
-            isDismissed = false
+            isDismissed = false,
+            isClearable = sbn.isClearable,
+            autoCancel = (notification.flags and android.app.Notification.FLAG_AUTO_CANCEL) != 0,
+            contentIntent = notification.contentIntent
         )
     }
 
