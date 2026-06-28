@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui.qs
+package com.android.systemui.lite.qs
 
 import android.content.Context
 import android.content.Intent

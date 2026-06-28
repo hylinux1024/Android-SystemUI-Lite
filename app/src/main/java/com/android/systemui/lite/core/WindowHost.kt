@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui.core
+package com.android.systemui.lite.core
 
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner

@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui
+package com.android.systemui.lite
 
 interface CoreStartable {
     fun start()

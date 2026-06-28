@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui.ui
+package com.android.systemui.lite.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -36,8 +36,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.android.systemui.lite.systemui.model.BatteryPercentageStyle
-import com.android.systemui.lite.systemui.model.ClockPosition
+import com.android.systemui.lite.model.BatteryPercentageStyle
+import com.android.systemui.lite.model.ClockPosition
 
 @Composable
 fun StatusBar(

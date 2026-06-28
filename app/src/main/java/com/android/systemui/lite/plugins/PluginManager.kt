@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui.plugins
+package com.android.systemui.lite.plugins
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

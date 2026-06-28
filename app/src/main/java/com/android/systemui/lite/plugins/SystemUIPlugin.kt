@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui.plugins
+package com.android.systemui.lite.plugins
 
 interface SystemUIPlugin {
     val id: String

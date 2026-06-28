@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui.core
+package com.android.systemui.lite.core
 
 import android.content.Context
 import android.content.res.Configuration
@@ -13,9 +13,9 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.android.systemui.lite.systemui.CoreStartable
-import com.android.systemui.lite.systemui.ui.NavigationBar
-import com.android.systemui.lite.systemui.viewmodel.SystemUIViewModel
+import com.android.systemui.lite.CoreStartable
+import com.android.systemui.lite.model.NavigationMode
+import com.android.systemui.lite.ui.navigation.NavigationBarView
 
 class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
 
@@ -26,8 +26,6 @@ class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
     private val windowHost = WindowHost()
     private var navBarView: ComposeView? = null
 
-    private val viewModel by lazy { SystemUIViewModel.instance }
-
     override fun start() {
         Log.d(TAG, "Starting NavigationBarCoreStartable...")
         windowHost.start()
@@ -36,7 +34,6 @@ class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
     }
 
     override fun onBootCompleted() {}
-
     override fun onConfigurationChanged(newConfig: Configuration) {}
 
     override fun stop() {
@@ -82,12 +79,9 @@ class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
 
             setContent {
                 MaterialTheme {
-                    val themeColor by viewModel.themeColor.collectAsState()
-                    val navigationMode by viewModel.navigationMode.collectAsState()
-
-                    NavigationBar(
-                        themeColor = themeColor,
-                        navigationMode = navigationMode,
+                    NavigationBarView(
+                        themeColor = androidx.compose.ui.graphics.Color(0xFF00ADB5),
+                        navigationMode = detectNavigationMode(),
                         onBack = { sendKeyEvent(4) },
                         onHome = { sendKeyEvent(3) },
                         onRecents = { sendKeyEvent(187) }
@@ -103,16 +97,13 @@ class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
             Log.e(TAG, "Failed to add nav bar window: ${e.message}")
             @Suppress("DEPRECATION")
             val fallbackParams = WindowManager.LayoutParams(
-                params.width,
-                params.height,
+                params.width, params.height,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT
-            ).apply {
-                gravity = params.gravity
-            }
+            ).apply { gravity = params.gravity }
             try {
                 wm.addView(navBarView, fallbackParams)
                 Log.d(TAG, "NavigationBar window added with TYPE_APPLICATION_OVERLAY (fallback)")
@@ -122,13 +113,22 @@ class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
         }
     }
 
+    private fun detectNavigationMode(): NavigationMode {
+        return try {
+            val mode = android.provider.Settings.Secure.getInt(
+                context.contentResolver, "navigation_mode", 0
+            )
+            if (mode == 2) NavigationMode.GESTURES else NavigationMode.THREE_BUTTON
+        } catch (e: Exception) {
+            NavigationMode.THREE_BUTTON
+        }
+    }
+
     private fun getNavigationBarHeightPx(): Int {
         val resourceId = context.resources.getIdentifier("navigation_bar_height", "dimen", "android")
         val height = if (resourceId > 0) {
             context.resources.getDimensionPixelSize(resourceId)
-        } else {
-            0
-        }
+        } else { 0 }
         return if (height > 0) height else (48 * context.resources.displayMetrics.density).toInt()
     }
 

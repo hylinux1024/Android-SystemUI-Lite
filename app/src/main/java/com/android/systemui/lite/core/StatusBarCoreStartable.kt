@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui.core
+package com.android.systemui.lite.core
 
 import android.content.Context
 import android.content.res.Configuration
@@ -14,12 +14,11 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.android.systemui.lite.systemui.CoreStartable
-import com.android.systemui.lite.systemui.statusbar.StatusBarManager
-import com.android.systemui.lite.systemui.ui.StatusBar
-import com.android.systemui.lite.systemui.viewmodel.SystemUIViewModel
+import com.android.systemui.lite.CoreStartable
+import com.android.systemui.lite.ui.StatusBar
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.koin.core.context.GlobalContext
 
 class StatusBarCoreStartable(
     private val context: Context,
@@ -31,10 +30,11 @@ class StatusBarCoreStartable(
     }
 
     private val windowHost = WindowHost()
-    private var statusBarManager: StatusBarManager? = null
     private var statusBarView: ComposeView? = null
 
-    private val viewModel by lazy { SystemUIViewModel.instance }
+    private val sp by lazy {
+        GlobalContext.get().get<com.android.systemui.lite.data.SystemStateProvider>()
+    }
 
     data class CutoutInfo(
         val safeInsetLeft: Int = 0,
@@ -42,25 +42,18 @@ class StatusBarCoreStartable(
         val cutoutRect: Rect = Rect()
     )
     private val _cutoutInfo = MutableStateFlow(CutoutInfo())
-    private val cutoutInfo: StateFlow<CutoutInfo> = _cutoutInfo
 
     override fun start() {
         Log.d(TAG, "Starting StatusBarCoreStartable...")
         windowHost.start()
-
-        statusBarManager = StatusBarManager(context)
-        statusBarManager?.start()
-
+        sp.start()
         initStatusBarWindow()
         Log.d(TAG, "StatusBarCoreStartable started")
     }
 
-    override fun onBootCompleted() {
-        Log.d(TAG, "onBootCompleted")
-    }
+    override fun onBootCompleted() {}
 
-    override fun onConfigurationChanged(newConfig: Configuration) {
-    }
+    override fun onConfigurationChanged(newConfig: Configuration) {}
 
     override fun stop() {
         Log.d(TAG, "Stopping StatusBarCoreStartable...")
@@ -73,8 +66,7 @@ class StatusBarCoreStartable(
             }
         }
         statusBarView = null
-        statusBarManager?.stop()
-        statusBarManager = null
+        sp.stop()
         windowHost.destroy()
     }
 
@@ -95,8 +87,7 @@ class StatusBarCoreStartable(
             setTitle("StatusBar")
             packageName = context.packageName
             setFitInsetsTypes(0)
-            layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
 
         val screenHeightPx = context.resources.displayMetrics.heightPixels
@@ -123,11 +114,7 @@ class StatusBarCoreStartable(
                         safeLeft = displayCutout.safeInsetLeft
                         safeRight = displayCutout.safeInsetRight
                     }
-                    _cutoutInfo.value = CutoutInfo(
-                        safeInsetLeft = safeLeft,
-                        safeInsetRight = safeRight,
-                        cutoutRect = cutoutRect
-                    )
+                    _cutoutInfo.value = CutoutInfo(safeInsetLeft = safeLeft, safeInsetRight = safeRight, cutoutRect = cutoutRect)
                 } else {
                     _cutoutInfo.value = CutoutInfo()
                 }
@@ -136,43 +123,30 @@ class StatusBarCoreStartable(
 
             setContent {
                 MaterialTheme {
-                    val batteryLevel by viewModel.batteryLevel.collectAsState()
-                    val isCharging by viewModel.isCharging.collectAsState()
-                    val isWifiOn by viewModel.isWifiOn.collectAsState()
-                    val isBluetoothOn by viewModel.isBluetoothOn.collectAsState()
-                    val isDoNotDisturb by viewModel.isDoNotDisturb.collectAsState()
-                    val isAirplaneMode by viewModel.isAirplaneMode.collectAsState()
-                    val timeString by viewModel.timeString.collectAsState()
-                    val themeColor by viewModel.themeColor.collectAsState()
-                    val heightDp by viewModel.statusBarHeight.collectAsState()
-                    val iconSize by viewModel.statusBarIconSize.collectAsState()
-                    val clockPosition by viewModel.clockPosition.collectAsState()
-                    val batteryStyle by viewModel.batteryStyle.collectAsState()
-                    val plugins by viewModel.plugins.collectAsState()
-                    val isTrafficActive = plugins.find { it.id == "traffic_indicator" }?.isEnabled == true
-                    val currentCutout by cutoutInfo.collectAsState()
+                    val battery by sp.battery.collectAsState()
+                    val connectivity by sp.connectivity.collectAsState()
+                    val timeString by sp.timeString.collectAsState()
+                    val cutout by _cutoutInfo.collectAsState()
 
                     StatusBar(
-                        heightDp = heightDp,
-                        iconSizeDp = iconSize,
-                        clockPosition = clockPosition,
-                        batteryStyle = batteryStyle,
-                        batteryLevel = batteryLevel,
-                        isCharging = isCharging,
-                        isWifiOn = isWifiOn,
-                        isBluetoothOn = isBluetoothOn,
-                        isDoNotDisturb = isDoNotDisturb,
-                        isAirplaneMode = isAirplaneMode,
+                        heightDp = 28,
+                        iconSizeDp = 16,
+                        clockPosition = com.android.systemui.lite.model.ClockPosition.LEFT,
+                        batteryStyle = com.android.systemui.lite.model.BatteryPercentageStyle.ICON_AND_TEXT,
+                        batteryLevel = battery.level,
+                        isCharging = battery.isCharging,
+                        isWifiOn = connectivity.wifiEnabled,
+                        isBluetoothOn = connectivity.bluetoothEnabled,
+                        isDoNotDisturb = connectivity.dndEnabled,
+                        isAirplaneMode = connectivity.airplaneMode,
                         timeString = timeString,
-                        isTrafficActive = isTrafficActive,
-                        themeColor = themeColor,
-                        safeInsetLeft = currentCutout.safeInsetLeft,
-                        safeInsetRight = currentCutout.safeInsetRight,
+                        isTrafficActive = false,
+                        themeColor = androidx.compose.ui.graphics.Color(0xFF00ADB5),
+                        safeInsetLeft = cutout.safeInsetLeft,
+                        safeInsetRight = cutout.safeInsetRight,
                         onShadeToggle = { shadeController.toggleShade() },
                         onShadeDragUpdate = { offset ->
-                            shadeController.dragShade(
-                                (offset / maxShadeOffsetPx).coerceIn(0f, 1f)
-                            )
+                            shadeController.dragShade((offset / maxShadeOffsetPx).coerceIn(0f, 1f))
                         },
                         onShadeDragEnd = { offset, isFling ->
                             if (kotlin.math.abs(offset) < 8f) return@StatusBar
@@ -198,10 +172,7 @@ class StatusBarCoreStartable(
         return if (resourceId > 0) {
             context.resources.getDimensionPixelSize(resourceId)
         } else {
-            val density = context.resources.displayMetrics.density
-            (25 * density).toInt()
+            (25 * context.resources.displayMetrics.density).toInt()
         }
     }
-
-    fun getStatusBarManager(): StatusBarManager? = statusBarManager
 }

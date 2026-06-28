@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui.statusbar
+package com.android.systemui.lite.statusbar
 
 import android.content.Context
 import android.graphics.PixelFormat

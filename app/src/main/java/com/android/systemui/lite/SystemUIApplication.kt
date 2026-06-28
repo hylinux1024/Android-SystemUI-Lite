@@ -4,15 +4,17 @@ import android.app.Application
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import com.android.systemui.lite.systemui.CoreStartable
-import com.android.systemui.lite.systemui.core.NavigationBarCoreStartable
-import com.android.systemui.lite.systemui.core.QSCoreStartable
-import com.android.systemui.lite.systemui.core.ShadeCoreStartable
-import com.android.systemui.lite.systemui.core.StatusBarCoreStartable
-import com.android.systemui.lite.systemui.plugins.PluginManager
+import com.android.systemui.lite.CoreStartable
+import com.android.systemui.lite.core.NavigationBarCoreStartable
+import com.android.systemui.lite.core.ShadeCoreStartable
+import com.android.systemui.lite.core.StatusBarCoreStartable
+import com.android.systemui.lite.di.initKoin
+import com.android.systemui.lite.di.destroyKoin
+import com.android.systemui.lite.plugins.PluginManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.koin.core.context.GlobalContext
 
 class SystemUIApplication : Application() {
 
@@ -24,7 +26,7 @@ class SystemUIApplication : Application() {
             private set
     }
 
-    val pluginManager = PluginManager()
+    lateinit var pluginManager: PluginManager
 
     private val startables = linkedMapOf<Class<*>, CoreStartable>()
 
@@ -46,6 +48,9 @@ class SystemUIApplication : Application() {
         super.onCreate()
         instance = this
 
+        initKoin(this)
+        pluginManager = GlobalContext.get().get()
+
         logSystemEvent(TAG, "========================================")
         logSystemEvent(TAG, "SystemUIApplication onCreate initialized.")
         logSystemEvent(TAG, "Process: com.android.systemui")
@@ -55,6 +60,11 @@ class SystemUIApplication : Application() {
         pluginManager.registerLogListener { message ->
             logSystemEvent("PluginManager", message)
         }
+    }
+
+    override fun onTerminate() {
+        super.onTerminate()
+        destroyKoin()
     }
 
     fun startServicesIfNeeded() {
@@ -71,21 +81,14 @@ class SystemUIApplication : Application() {
     private fun bootstrapComponents() {
         logSystemEvent(TAG, "SystemUI bootstrap: Initializing core services...")
 
-        // Phase 1: Create ShadeCoreStartable (needed by StatusBarCoreStartable for ShadeController)
         val shade = ShadeCoreStartable(this)
         registerStartable(ShadeCoreStartable::class.java, shade)
 
-        // Phase 2: StatusBarCoreStartable (status bar window + system state)
         val statusBar = StatusBarCoreStartable(this, shade)
         registerStartable(StatusBarCoreStartable::class.java, statusBar)
 
-        // Phase 3: NavigationBarCoreStartable
         registerStartable(NavigationBarCoreStartable::class.java, NavigationBarCoreStartable(this))
 
-        // Phase 4: QSCoreStartable
-        registerStartable(QSCoreStartable::class.java, QSCoreStartable(this))
-
-        // Start all in sorted order (matching AOSP's deterministic startup)
         val sorted = startables.toSortedMap(compareBy { it.name })
         sorted.forEach { (cls, startable) ->
             logSystemEvent(TAG, "Starting: ${cls.simpleName}")
@@ -98,7 +101,6 @@ class SystemUIApplication : Application() {
             }
         }
 
-        // Post-init tasks (mirrors AOSP InitController)
         mainHandler.post {
             logSystemEvent(TAG, "Running post-init tasks...")
             sorted.forEach { (cls, startable) ->
@@ -118,7 +120,6 @@ class SystemUIApplication : Application() {
 
         logSystemEvent(TAG, "Stopping all SystemUI services...")
 
-        // Stop in reverse order
         startables.entries.reversed().forEach { (cls, startable) ->
             try {
                 startable.stop()

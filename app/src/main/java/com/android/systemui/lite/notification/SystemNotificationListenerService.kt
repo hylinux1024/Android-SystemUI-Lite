@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui.notification
+package com.android.systemui.lite.notification
 
 import android.app.Notification
 import android.content.Intent
@@ -7,7 +7,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.android.systemui.lite.SystemUIApplication
-import com.android.systemui.lite.systemui.model.NotificationItem
+import com.android.systemui.lite.model.NotificationItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -155,12 +155,12 @@ class SystemNotificationListenerService : NotificationListenerService() {
         val type = when (notification.category) {
             Notification.CATEGORY_MESSAGE,
             Notification.CATEGORY_EMAIL,
-            Notification.CATEGORY_SOCIAL -> com.android.systemui.lite.systemui.model.NotificationType.MESSAGE
+            Notification.CATEGORY_SOCIAL -> com.android.systemui.lite.model.NotificationType.MESSAGE
 
-            Notification.CATEGORY_CALL -> com.android.systemui.lite.systemui.model.NotificationType.CALL
-            Notification.CATEGORY_ALARM -> com.android.systemui.lite.systemui.model.NotificationType.ALERT
-            Notification.CATEGORY_TRANSPORT -> com.android.systemui.lite.systemui.model.NotificationType.DOWNLOAD
-            else -> com.android.systemui.lite.systemui.model.NotificationType.INFO
+            Notification.CATEGORY_CALL -> com.android.systemui.lite.model.NotificationType.CALL
+            Notification.CATEGORY_ALARM -> com.android.systemui.lite.model.NotificationType.ALERT
+            Notification.CATEGORY_TRANSPORT -> com.android.systemui.lite.model.NotificationType.DOWNLOAD
+            else -> com.android.systemui.lite.model.NotificationType.INFO
         }
 
         // Get app icon

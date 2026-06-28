@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui.core
+package com.android.systemui.lite.core
 
 import android.content.Context
 import android.content.res.Configuration
@@ -18,9 +18,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.android.systemui.lite.systemui.CoreStartable
-import com.android.systemui.lite.systemui.ui.NotificationShade
-import com.android.systemui.lite.systemui.viewmodel.SystemUIViewModel
+import com.android.systemui.lite.CoreStartable
+import com.android.systemui.lite.ui.NotificationShade
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,8 +27,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.koin.core.context.GlobalContext
 
 class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeController {
 
@@ -39,13 +40,15 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
 
     private val windowHost = WindowHost()
     private val scope = CoroutineScope(Dispatchers.Main)
-    private val viewModel by lazy { SystemUIViewModel.instance }
+    private val sp by lazy {
+        GlobalContext.get().get<com.android.systemui.lite.data.SystemStateProvider>()
+    }
 
     private var shadeView: ComposeView? = null
     private var isShadeWindowAdded = false
 
     private val _shadeProgress = MutableStateFlow(0f)
-    val shadeProgress: StateFlow<Float> = _shadeProgress
+    val shadeProgress: StateFlow<Float> = _shadeProgress.asStateFlow()
 
     private var shadeAnimJob: Job? = null
 
@@ -56,18 +59,18 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     }
 
     override fun onBootCompleted() {}
-
     override fun onConfigurationChanged(newConfig: Configuration) {}
 
     override fun stop() {
         Log.d(TAG, "Stopping ShadeCoreStartable...")
         shadeAnimJob?.cancel()
         scope.cancel()
-        closeNotificationShade()
+        closeShade()
         windowHost.destroy()
     }
 
     override fun toggleShade() {
+        Log.d(TAG, "toggleShade: isAdded=$isShadeWindowAdded, progress=${_shadeProgress.value}")
         if (isShadeWindowAdded && _shadeProgress.value > 0.5f) {
             animateShadeTo(0f)
         } else {
@@ -78,10 +81,9 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
 
     override fun dragShade(progress: Float) {
         shadeAnimJob?.cancel()
-        _shadeProgress.value = progress.coerceIn(0f, 1f)
-        if (progress > 0f) {
-            ensureShadeWindow()
-        }
+        val clamped = progress.coerceIn(0f, 1f)
+        _shadeProgress.value = clamped
+        if (clamped > 0f) ensureShadeWindow()
     }
 
     override fun flingShade(target: Float) {
@@ -109,7 +111,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                 delay(16)
             }
             if (_shadeProgress.value <= 0f) {
-                closeNotificationShade()
+                closeShade()
             }
         }
     }
@@ -119,7 +121,6 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
 
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val screenHeightPx = context.resources.displayMetrics.heightPixels
-        val maxShadeOffsetPx = screenHeightPx.toFloat()
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -135,8 +136,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
             setTitle("NotificationShade")
             packageName = context.packageName
             setFitInsetsTypes(0)
-            layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
 
         shadeView = ComposeView(context).apply {
@@ -145,49 +145,52 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
             setViewTreeSavedStateRegistryOwner(windowHost)
 
             setContent {
-                val themeColor by viewModel.themeColor.collectAsState()
-                val isWifiOn by viewModel.isWifiOn.collectAsState()
-                val isBluetoothOn by viewModel.isBluetoothOn.collectAsState()
-                val isDoNotDisturb by viewModel.isDoNotDisturb.collectAsState()
-                val isFlashlightOn by viewModel.isFlashlightOn.collectAsState()
-                val isAirplaneMode by viewModel.isAirplaneMode.collectAsState()
-                val isAutoRotateOn by viewModel.isAutoRotateOn.collectAsState()
-                val isScreenRecording by viewModel.isScreenRecording.collectAsState()
-                val brightness by viewModel.brightness.collectAsState()
-                val mediaVolume by viewModel.mediaVolume.collectAsState()
-                val notifications by viewModel.notifications.collectAsState()
-                val plugins by viewModel.plugins.collectAsState()
-                val isResourceMonitorActive = plugins.find { it.id == "resource_monitor" }?.isEnabled == true
-                val progress by _shadeProgress.collectAsState()
+                MaterialTheme {
+                    val connectivity by sp.connectivity.collectAsState()
+                    val brightness by sp.brightness.collectAsState()
+                    val mediaVolume by sp.mediaVolume.collectAsState()
+                    val flashlightOn by sp.flashlightEnabled.collectAsState()
+                    val autoRotateOn by sp.autoRotateEnabled.collectAsState()
+                    val progress by _shadeProgress.collectAsState()
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .offset {
-                            IntOffset(
-                                0,
-                                (-(maxShadeOffsetPx * (1f - progress))).toInt()
-                            )
-                        }
-                ) {
-                    NotificationShade(
-                        viewModel = viewModel,
-                        themeColor = themeColor,
-                        isWifiOn = isWifiOn,
-                        isBluetoothOn = isBluetoothOn,
-                        isDoNotDisturb = isDoNotDisturb,
-                        isFlashlightOn = isFlashlightOn,
-                        isAirplaneMode = isAirplaneMode,
-                        isAutoRotateOn = isAutoRotateOn,
-                        isScreenRecording = isScreenRecording,
-                        brightness = brightness,
-                        mediaVolume = mediaVolume,
-                        notifications = notifications,
-                        isResourceMonitorActive = isResourceMonitorActive,
-                        onDismissNotification = { viewModel.dismissNotification(it) },
-                        onClearAllNotifications = { viewModel.clearAllNotifications() },
-                        onCloseShade = { animateShadeTo(0f) }
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .offset {
+                                IntOffset(0, (-(screenHeightPx.toFloat() * (1f - progress))).toInt())
+                            }
+                    ) {
+                        NotificationShade(
+                            themeColor = androidx.compose.ui.graphics.Color(0xFF00ADB5),
+                            isWifiOn = connectivity.wifiEnabled,
+                            isBluetoothOn = connectivity.bluetoothEnabled,
+                            isDoNotDisturb = connectivity.dndEnabled,
+                            isFlashlightOn = flashlightOn,
+                            isAirplaneMode = connectivity.airplaneMode,
+                            isAutoRotateOn = autoRotateOn,
+                            isScreenRecording = false,
+                            brightness = brightness / 255f,
+                            mediaVolume = mediaVolume / 100f,
+                            notifications = emptyList(),
+                            isResourceMonitorActive = false,
+                            statusBarHeightDp = 28,
+                            onToggleWifi = { sp.toggleWifi() },
+                            onToggleBluetooth = { sp.toggleBluetooth() },
+                            onToggleDnd = { sp.toggleDnd() },
+                            onToggleFlashlight = { sp.toggleFlashlight() },
+                            onToggleAirplaneMode = { sp.toggleAirplaneMode() },
+                            onToggleAutoRotate = { sp.toggleAutoRotate() },
+                            onToggleScreenRecording = {},
+                            onSetBrightness = { sp.setBrightness((it * 255).toInt()) },
+                            onSetMediaVolume = { sp.setMediaVolume((it * 100).toInt()) },
+                            onDismissNotification = {},
+                            onClearAllNotifications = {},
+                            onCloseShade = { animateShadeTo(0f) },
+                            onPlayPauseMusic = {},
+                            onPrevTrack = {},
+                            onNextTrack = {}
+                        )
+                    }
                 }
             }
         }
@@ -195,13 +198,13 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
         try {
             wm.addView(shadeView, params)
             isShadeWindowAdded = true
-            Log.d(TAG, "Notification shade window added")
+            Log.d(TAG, "Notification shade window added (TYPE_APPLICATION_OVERLAY)")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add shade window: ${e.message}", e)
         }
     }
 
-    private fun closeNotificationShade() {
+    private fun closeShade() {
         shadeView?.let { view ->
             try {
                 val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -212,5 +215,6 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
         }
         shadeView = null
         isShadeWindowAdded = false
+        _shadeProgress.value = 0f
     }
 }

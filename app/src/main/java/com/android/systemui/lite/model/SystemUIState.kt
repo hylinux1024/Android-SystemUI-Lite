@@ -1,4 +1,4 @@
-package com.android.systemui.lite.systemui.model
+package com.android.systemui.lite.model
 
 import android.graphics.drawable.Drawable
 import androidx.compose.ui.graphics.Color
