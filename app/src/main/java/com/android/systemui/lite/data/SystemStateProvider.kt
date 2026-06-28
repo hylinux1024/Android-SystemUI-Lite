@@ -226,14 +226,8 @@ class SystemStateProvider(
     fun toggleBluetooth() {
         val newState = !_connectivity.value.bluetoothEnabled
         try {
-            val btClass = Class.forName("android.bluetooth.BluetoothAdapter")
-            val getDefaultAdapter = btClass.getMethod("getDefaultAdapter")
-            val adapter = getDefaultAdapter.invoke(null)
-            if (newState) {
-                btClass.getMethod("enable").invoke(adapter)
-            } else {
-                btClass.getMethod("disable").invoke(adapter)
-            }
+            val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter() ?: return
+            if (newState) adapter.enable() else adapter.disable()
             _connectivity.value = _connectivity.value.copy(bluetoothEnabled = newState)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to toggle Bluetooth: ${e.message}", e)
@@ -342,9 +336,7 @@ class SystemStateProvider(
     } catch (e: Exception) { false }
 
     private fun isBluetoothEnabled(): Boolean = try {
-        val btClass = Class.forName("android.bluetooth.BluetoothAdapter")
-        val adapter = btClass.getMethod("getDefaultAdapter").invoke(null)
-        btClass.getMethod("isEnabled").invoke(adapter) as Boolean
+        android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
     } catch (e: Exception) { false }
 
     private fun isDndEnabled(): Boolean = try {

@@ -59,6 +59,9 @@ androidComponents {
 }
 
 dependencies {
+  // Framework (hidden APIs) - compileOnly for system app
+  compileOnly(files("libs/framework-minus-apex.jar"))
+
   // Core Android
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.activity.compose)

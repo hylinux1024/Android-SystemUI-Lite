@@ -203,11 +203,7 @@ class StatusBarManager(private val context: Context) {
 
         // Bluetooth
         isBluetoothOn = try {
-            val btClass = Class.forName("android.bluetooth.BluetoothAdapter")
-            val getDefaultAdapter = btClass.getMethod("getDefaultAdapter")
-            val adapter = getDefaultAdapter.invoke(null)
-            val isEnabled = btClass.getMethod("isEnabled")
-            isEnabled.invoke(adapter) as Boolean
+            android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
         } catch (e: Exception) {
             false
         }

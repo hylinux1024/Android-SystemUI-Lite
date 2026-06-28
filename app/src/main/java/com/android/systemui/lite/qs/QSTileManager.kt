@@ -13,7 +13,7 @@ import com.android.systemui.lite.SystemUIApplication
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.lang.reflect.Method
+import android.bluetooth.BluetoothAdapter
 
 /**
  * QSTileManager - Manages Quick Settings tiles with real system state.
@@ -172,11 +172,7 @@ class QSTileManager(private val context: Context) {
 
     private fun isBluetoothEnabled(): Boolean {
         return try {
-            val btClass = Class.forName("android.bluetooth.BluetoothAdapter")
-            val getDefaultAdapter = btClass.getMethod("getDefaultAdapter")
-            val adapter = getDefaultAdapter.invoke(null)
-            val isEnabled = btClass.getMethod("isEnabled")
-            isEnabled.invoke(adapter) as Boolean
+            BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
         } catch (e: Exception) {
             false
         }
@@ -185,16 +181,8 @@ class QSTileManager(private val context: Context) {
     fun toggleBluetooth() {
         val newState = !_bluetoothEnabled.value
         try {
-            val btClass = Class.forName("android.bluetooth.BluetoothAdapter")
-            val getDefaultAdapter = btClass.getMethod("getDefaultAdapter")
-            val adapter = getDefaultAdapter.invoke(null)
-            val enableMethod = btClass.getMethod("enable")
-            if (newState) {
-                enableMethod.invoke(adapter)
-            } else {
-                val disableMethod = btClass.getMethod("disable")
-                disableMethod.invoke(adapter)
-            }
+            val adapter = BluetoothAdapter.getDefaultAdapter() ?: return
+            if (newState) adapter.enable() else adapter.disable()
             _bluetoothEnabled.value = newState
             Log.d(TAG, "Bluetooth toggled to $newState")
         } catch (e: Exception) {

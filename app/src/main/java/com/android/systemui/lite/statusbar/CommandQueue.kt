@@ -1,24 +1,23 @@
 package com.android.systemui.lite.statusbar
 
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
+import android.os.ServiceManager
 import android.util.Log
-import java.lang.reflect.Method
+import com.android.internal.statusbar.IStatusBar
+import com.android.internal.statusbar.IStatusBarService
+import com.android.internal.statusbar.StatusBarIcon
 
 /**
  * CommandQueue - The IPC bridge between system_server and SystemUI.
  *
- * In AOSP, CommandQueue extends IStatusBar.Stub (AIDL-generated binder).
- * system_server calls methods on this binder to send commands to SystemUI.
+ * Uses framework-minus-apex.jar (hidden APIs) to directly invoke
+ * IStatusBarService.registerStatusBar() and implement IStatusBar.Stub,
+ * eliminating all reflection from the registration path.
  *
- * Since we can't use AIDL in a Gradle project without framework sources,
- * we use reflection to create an IStatusBar.Stub proxy and register it
- * with StatusBarManagerService.
- *
- * The key flow:
- * 1. Create an IStatusBar.Stub instance via reflection
- * 2. Register it with IStatusBarService.registerStatusBar()
- * 3. Receive callbacks on the stub when system_server sends commands
+ * Kotlin "by" delegation to IStatusBar.Default provides no-op stubs
+ * for all 70+ interface methods, so we only override what we need.
  */
 class CommandQueue {
 
@@ -26,10 +25,6 @@ class CommandQueue {
         private const val TAG = "CommandQueue"
     }
 
-    /**
-     * Callback interface for status bar commands.
-     * Components implement this to receive system_server notifications.
-     */
     interface Callbacks {
         fun setIcon(slot: String, packageName: String, resourceId: Int, contentDescription: String, tint: Int) {}
         fun removeIcon(slot: String) {}
@@ -47,23 +42,15 @@ class CommandQueue {
         fun onBiometricAuthenticated() {}
         fun onBiometricHelp(message: String?) {}
         fun onBiometricError(message: String?) {}
-        fun onBiometricRunningStateChanged(running: Boolean) {}
         fun showToast(displayId: Int, token: Any?, text: CharSequence, windowToken: Any?) {}
-        fun onAlertStateChanged(alertState: Int) {}
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val callbacks = mutableListOf<Callbacks>()
 
-    // The IStatusBar.Stub instance (created via reflection)
-    private var statusBarBinderInstance: Any? = null
+    private var statusBarBinder: StatusBarStub? = null
+    private var statusBarService: IStatusBarService? = null
 
-    // The IStatusBarService proxy
-    private var statusBarServiceProxy: Any? = null
-
-    /**
-     * Register a callback receiver.
-     */
     fun addCallback(callback: Callbacks) {
         synchronized(callbacks) {
             if (!callbacks.contains(callback)) {
@@ -72,9 +59,6 @@ class CommandQueue {
         }
     }
 
-    /**
-     * Remove a callback receiver.
-     */
     fun removeCallback(callback: Callbacks) {
         synchronized(callbacks) {
             callbacks.remove(callback)
@@ -82,45 +66,24 @@ class CommandQueue {
     }
 
     /**
-     * Register with StatusBarManagerService via reflection.
-     *
-     * This creates an IStatusBar.Stub proxy and calls:
-     *   IStatusBarService.registerStatusBar(IStatusBar)
+     * Register with StatusBarManagerService. No reflection.
      *
      * @return true if registration succeeded
      */
     fun register(): Boolean {
         try {
-            // Get IStatusBarService
-            val smClass = Class.forName("android.os.ServiceManager")
-            val getServiceMethod = smClass.getMethod("getService", String::class.java)
-            val sbBinder = getServiceMethod.invoke(null, "statusbar")
+            val binder = ServiceManager.getService("statusbar")
                 ?: return logAndReturnFalse("Failed to get StatusBarManagerService")
 
-            // Get IStatusBarService.Stub.asInterface
-            val stubClass = Class.forName("com.android.internal.statusbar.IStatusBarService\$Stub")
-            val asInterfaceMethod = stubClass.getMethod("asInterface", android.os.IBinder::class.java)
-            statusBarServiceProxy = asInterfaceMethod.invoke(null, sbBinder)
+            statusBarService = IStatusBarService.Stub.asInterface(binder)
                 ?: return logAndReturnFalse("Failed to get IStatusBarService interface")
 
-            // Create our IStatusBar.Stub callback
-            val iStatusBarStub = createStatusBarBinder()
-            if (iStatusBarStub == null) {
-                Log.w(TAG, "Could not create IStatusBar.Stub, running in standalone mode")
-                return false
-            }
+            val iStatusBar = StatusBarStub()
+            statusBarBinder = iStatusBar
 
-            statusBarBinderInstance = iStatusBarStub
-
-            // Call registerStatusBar(IStatusBar)
-            val registerMethod = statusBarServiceProxy!!.javaClass.getMethod(
-                "registerStatusBar",
-                Class.forName("com.android.internal.statusbar.IStatusBar")
-            )
-            val result = registerMethod.invoke(statusBarServiceProxy, iStatusBarStub)
+            statusBarService!!.registerStatusBar(iStatusBar)
             Log.d(TAG, "Successfully registered with StatusBarManagerService")
             return true
-
         } catch (e: Exception) {
             Log.w(TAG, "Registration with StatusBarManagerService failed: ${e.message}")
             Log.d(TAG, "Running in standalone mode (not registered with system_server)")
@@ -128,142 +91,151 @@ class CommandQueue {
         }
     }
 
-    /**
-     * Create an IStatusBar.Stub instance via reflection.
-     *
-     * Note: IStatusBar.Stub is a class (not interface), so Proxy.newProxyInstance
-     * won't work. We log the error and return null to run in standalone mode.
-     * In standalone mode, we don't register with system_server but still function
-     * as a status bar with the TYPE_STATUS_BAR window.
-     */
-    private fun createStatusBarBinder(): Any? {
-        Log.w(TAG, "IStatusBar.Stub is a class, not an interface - cannot use Proxy")
-        Log.d(TAG, "Running in standalone mode without system_server registration")
-        return null
-    }
+    // ── IStatusBar.Stub with Kotlin delegation to Default for all no-op methods ──
 
-    /**
-     * Handle method calls from system_server on our IStatusBar binder.
-     */
-    private fun handleStatusBarMethod(method: Method, args: Array<Any>?): Any? {
-        val methodName = method.name
-        Log.d(TAG, "system_server call: $methodName")
+    private inner class StatusBarStub : IStatusBar.Stub(), IStatusBar by IStatusBar.Default() {
 
-        mainHandler.post {
-            synchronized(callbacks) { callbacks.toList() }.forEach { callback ->
-                try {
-                    dispatchMethod(callback, methodName, args)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error dispatching $methodName to callback: ${e.message}", e)
+        override fun asBinder(): IBinder = this
+
+        override fun disable(displayId: Int, state1: Int, state2: Int) {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.disable(displayId, state1, state2, false)
                 }
             }
         }
 
-        return null
-    }
+        override fun animateExpandNotificationsPanel() {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.animateExpandNotificationsPanel()
+                }
+            }
+        }
 
-    /**
-     * Dispatch a method call to the appropriate callback.
-     */
-    private fun dispatchMethod(callback: Callbacks, methodName: String, args: Array<Any>?) {
-        when (methodName) {
-            "setIcon" -> {
-                // setIcon(String slot, String pkg, int iconId, String contentDescription, int tint)
-                args?.let {
-                    if (it.size >= 5) {
-                        callback.setIcon(
-                            it[0] as String,
-                            it[1] as String,
-                            it[2] as Int,
-                            it[3] as String,
-                            it[4] as Int
-                        )
-                    }
+        override fun animateExpandSettingsPanel(subPanel: String?) {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.animateExpandSettingsPanel(subPanel)
                 }
             }
-            "removeIcon" -> {
-                args?.let {
-                    if (it.isNotEmpty()) {
-                        callback.removeIcon(it[0] as String)
-                    }
+        }
+
+        override fun animateCollapsePanels() {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.animateCollapsePanels(0, false)
                 }
             }
-            "disable" -> {
-                args?.let {
-                    if (it.size >= 4) {
-                        callback.disable(
-                            it[0] as Int,
-                            it[1] as Int,
-                            it[2] as Int,
-                            it[3] as Boolean
-                        )
-                    }
+        }
+
+        override fun togglePanel() {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.togglePanel()
                 }
             }
-            "animateExpandNotificationsPanel" -> {
-                callback.animateExpandNotificationsPanel()
-            }
-            "animateCollapsePanels" -> {
-                args?.let {
-                    if (it.size >= 2) {
-                        callback.animateCollapsePanels(it[0] as Int, it[1] as Boolean)
-                    }
+        }
+
+        override fun setWindowState(display: Int, window: Int, state: Int) {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.setWindowState(display, window, state)
                 }
             }
-            "togglePanel" -> {
-                callback.togglePanel()
-            }
-            "animateExpandSettingsPanel" -> {
-                args?.let {
-                    if (it.isNotEmpty()) {
-                        callback.animateExpandSettingsPanel(it[0] as? String)
-                    }
+        }
+
+        override fun showRecentApps(triggeredFromAltTab: Boolean) {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.showRecentApps(triggeredFromAltTab)
                 }
             }
-            "setWindowState" -> {
-                args?.let {
-                    if (it.size >= 3) {
-                        callback.setWindowState(it[0] as Int, it[1] as Int, it[2] as Int)
-                    }
+        }
+
+        override fun hideRecentApps(triggeredFromAltTab: Boolean, triggeredFromHomeKey: Boolean) {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.hideRecentApps(triggeredFromAltTab, triggeredFromHomeKey)
                 }
             }
-            "showGlobalActionsMenu" -> {
-                callback.showGlobalActionsMenu()
-            }
-            "showShutdownUi" -> {
-                args?.let {
-                    if (it.size >= 2) {
-                        callback.showShutdownUi(it[0] as Boolean, it[1] as? String)
-                    }
+        }
+
+        override fun showGlobalActionsMenu() {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.showGlobalActionsMenu()
                 }
             }
-            else -> {
-                Log.d(TAG, "Unhandled method: $methodName")
+        }
+
+        override fun showShutdownUi(isReboot: Boolean, reason: String?) {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.showShutdownUi(isReboot, reason)
+                }
+            }
+        }
+
+        override fun onProposedRotationChanged(rotation: Int, isValid: Boolean) {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.onRotationProposal(rotation, isValid)
+                }
+            }
+        }
+
+        override fun onBiometricAuthenticated(modality: Int) {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.onBiometricAuthenticated()
+                }
+            }
+        }
+
+        override fun onBiometricHelp(modality: Int, message: String?) {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.onBiometricHelp(message)
+                }
+            }
+        }
+
+        override fun onBiometricError(modality: Int, error: Int, vendorCode: Int) {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.onBiometricError("error=$error vendor=$vendorCode")
+                }
+            }
+        }
+
+        override fun showToast(
+            uid: Int, packageName: String?, token: IBinder?, text: CharSequence?,
+            windowToken: IBinder?, duration: Int,
+            callback: android.app.ITransientNotificationCallback?, displayId: Int
+        ) {
+            mainHandler.post {
+                synchronized(callbacks) { callbacks.toList() }.forEach {
+                    it.showToast(displayId, token, text ?: "", windowToken)
+                }
             }
         }
     }
 
-    /**
-     * Notify all callbacks that a panel should expand.
-     */
+    // ── Convenience methods (called internally from UI) ──
+
     fun animateExpandNotificationsPanel() {
         synchronized(callbacks) {
             callbacks.forEach { it.animateExpandNotificationsPanel() }
         }
     }
 
-    /**
-     * Notify all callbacks that panels should collapse.
-     */
     fun animateCollapsePanels(flags: Int = 0, force: Boolean = false) {
         synchronized(callbacks) {
             callbacks.forEach { it.animateCollapsePanels(flags, force) }
         }
     }
 
-    /**
-     * Notify all callbacks that the panel should toggle.
-     */
     fun togglePanel() {
         synchronized(callbacks) {
             callbacks.forEach { it.togglePanel() }
