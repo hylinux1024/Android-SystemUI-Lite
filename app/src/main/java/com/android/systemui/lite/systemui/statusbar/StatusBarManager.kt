@@ -147,10 +147,7 @@ class StatusBarManager(private val context: Context) {
         // Read initial system state
         readInitialState()
 
-        // Create and attach the status bar window
-        val heightPx = windowController.getStatusBarHeight()
-        // Note: In a real implementation, we'd create a PhoneStatusBarView here
-        // For now, the window will be managed by SystemUIOverlayService
+        // Status bar window is managed by StatusBarCoreStartable
 
         // Register with system_server
         val registered = commandQueue.register()

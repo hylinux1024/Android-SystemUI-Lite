@@ -81,12 +81,6 @@
             </intent-filter>
         </service>
 
-        <!-- Overlay service for status bar and notification shade windows -->
-        <service
-            android:name=".lite.systemui.service.SystemUIOverlayService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse" />
-
         <!-- Notification Listener Service - receives real notifications from system -->
         <service
             android:name=".lite.systemui.notification.SystemNotificationListenerService"

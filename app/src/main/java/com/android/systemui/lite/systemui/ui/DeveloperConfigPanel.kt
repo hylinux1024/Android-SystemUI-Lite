@@ -176,12 +176,12 @@ fun ParametersTab(viewModel: SystemUIViewModel) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        // Real-Device Background Overlay Service Control
+        // SystemUI Core Status
         item {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            var isServiceActive by remember { mutableStateOf(com.android.systemui.lite.systemui.service.SystemUIOverlayService.isRunning) }
+            val app = com.android.systemui.lite.SystemUIApplication.instance
+            var isActive by remember { mutableStateOf(true) }
 
-            ParameterCard(title = "Real-Device Background Overlay Service") {
+            ParameterCard(title = "SystemUI Core Status") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -190,48 +190,37 @@ fun ParametersTab(viewModel: SystemUIViewModel) {
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "SystemUI Overlay Engine",
+                                "CoreStartable Engine",
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                if (isServiceActive) "🟢 Active & Rendering" else "⚪ Inactive",
-                                color = if (isServiceActive) Color(0xFF4ADE80) else Color(0xFF94A3B8),
+                                if (isActive) "Running (${app.getStartableCount()} components)" else "Stopped",
+                                color = if (isActive) Color(0xFF4ADE80) else Color(0xFF94A3B8),
                                 fontSize = 11.sp
                             )
                         }
-                        
+
                         Button(
                             onClick = {
-                                if (isServiceActive) {
-                                    com.android.systemui.lite.systemui.service.SystemUIOverlayService.stopService(context)
-                                    isServiceActive = false
+                                if (isActive) {
+                                    app.stopServicesIfNeeded()
+                                    isActive = false
                                 } else {
-                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && 
-                                        !android.provider.Settings.canDrawOverlays(context)) {
-                                        val intent = android.content.Intent(
-                                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                            android.net.Uri.parse("package:${context.packageName}")
-                                        ).apply {
-                                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        }
-                                        context.startActivity(intent)
-                                    } else {
-                                        com.android.systemui.lite.systemui.service.SystemUIOverlayService.startService(context)
-                                        isServiceActive = true
-                                    }
+                                    app.startServicesIfNeeded()
+                                    isActive = true
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isServiceActive) Color(0xFFEF4444) else themeColor
+                                containerColor = if (isActive) Color(0xFFEF4444) else themeColor
                             ),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                             modifier = Modifier.height(32.dp)
                         ) {
                             Text(
-                                if (isServiceActive) "Stop Overlay" else "Start Overlay",
+                                if (isActive) "Stop" else "Start",
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -239,9 +228,9 @@ fun ParametersTab(viewModel: SystemUIViewModel) {
                         }
                     }
                     Text(
-                        "How to replace system SystemUI:\n" +
-                        "1. Enable Draw Over Other Apps (Overlay) permission above.\n" +
-                        "2. This application is designed with WindowManager service injection. Under root access, use commands to push it to /system_ext/priv-app/SystemUI/SystemUI.apk to replace standard UI.",
+                        "CoreStartable-based components:\n" +
+                        "StatusBar, NavigationBar, NotificationShade, QuickSettings.\n" +
+                        "All windows are managed by CoreStartables (no Android Services).",
                         color = Color(0xFF94A3B8),
                         fontSize = 11.sp,
                         lineHeight = 16.sp
