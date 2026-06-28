@@ -48,7 +48,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     private var isShadeWindowAdded = false
 
     private val _shadeProgress = MutableStateFlow(0f)
-    val shadeProgress: StateFlow<Float> = _shadeProgress.asStateFlow()
+    override val shadeProgress: StateFlow<Float> = _shadeProgress.asStateFlow()
 
     private var shadeAnimJob: Job? = null
 
@@ -122,14 +122,17 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val screenHeightPx = context.resources.displayMetrics.heightPixels
 
+        @Suppress("DEPRECATION")
+        val TYPE_STATUS_BAR_SUB_PANEL = 2018
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            TYPE_STATUS_BAR_SUB_PANEL,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.FILL
@@ -198,7 +201,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
         try {
             wm.addView(shadeView, params)
             isShadeWindowAdded = true
-            Log.d(TAG, "Notification shade window added (TYPE_APPLICATION_OVERLAY)")
+            Log.d(TAG, "Notification shade window added (TYPE_STATUS_BAR_SUB_PANEL)")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add shade window: ${e.message}", e)
         }

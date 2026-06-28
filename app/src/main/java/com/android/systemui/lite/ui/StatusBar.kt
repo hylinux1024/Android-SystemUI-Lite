@@ -59,7 +59,8 @@ fun StatusBar(
     onShadeToggle: () -> Unit,
     onShadeDragUpdate: ((Float) -> Unit)? = null,
     onShadeDragEnd: ((totalDragY: Float, isFling: Boolean) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isShadeOpen: Boolean = false
 ) {
     var totalDragY by remember { mutableStateOf(0f) }
     var totalDragX by remember { mutableStateOf(0f) }
@@ -97,7 +98,7 @@ fun StatusBar(
                         val absX = kotlin.math.abs(totalDragX)
                         if (absY < 8f && absX < 8f) {
                             onShadeToggle()
-                        } else {
+                        } else if (!isShadeOpen) {
                             val elapsedMs = (System.currentTimeMillis() - dragStartMs).coerceAtLeast(1)
                             val velocity = totalDragY / elapsedMs * 1000f
                             val isFling = velocity > 800f && totalDragY > 40f
@@ -109,7 +110,7 @@ fun StatusBar(
                         change.consume()
                         totalDragY += dragAmount.y
                         totalDragX += dragAmount.x
-                        if (totalDragY > 0) {
+                        if (totalDragY > 0 && !isShadeOpen) {
                             onShadeDragUpdate?.invoke(totalDragY)
                         }
                     }

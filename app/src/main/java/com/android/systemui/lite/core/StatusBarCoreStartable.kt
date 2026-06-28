@@ -127,6 +127,7 @@ class StatusBarCoreStartable(
                     val connectivity by sp.connectivity.collectAsState()
                     val timeString by sp.timeString.collectAsState()
                     val cutout by _cutoutInfo.collectAsState()
+                    val shadeProgress by shadeController.shadeProgress.collectAsState()
 
                     StatusBar(
                         heightDp = 28,
@@ -153,7 +154,8 @@ class StatusBarCoreStartable(
                             val shouldOpen = if (isFling) offset > 120f
                             else offset > maxShadeOffsetPx / 3f
                             shadeController.flingShade(if (shouldOpen) 1f else 0f)
-                        }
+                        },
+                        isShadeOpen = shadeProgress > 0.5f
                     )
                 }
             }
