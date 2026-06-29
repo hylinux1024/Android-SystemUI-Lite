@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.IntOffset
@@ -34,6 +38,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
+import kotlin.time.Duration.Companion.milliseconds
 
 class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeController {
 
@@ -119,7 +124,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                 val fraction = (elapsed.toFloat() / duration).coerceIn(0f, 1f)
                 val eased = 1f - (1f - fraction) * (1f - fraction) * (1f - fraction)
                 _shadeProgress.value = from + (to - from) * eased
-                delay(16)
+                delay(16.milliseconds)
             }
             if (_shadeProgress.value <= 0f) {
                 closeShade()
@@ -131,7 +136,6 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
         if (isShadeWindowAdded) return
 
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val screenHeightPx = context.resources.displayMetrics.heightPixels
 
         @Suppress("DEPRECATION")
         val TYPE_STATUS_BAR_SUB_PANEL = 2018
@@ -169,12 +173,14 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                     val wallpaperColors by wp.wallpaperColors.collectAsState()
                     val shadeNotifications by notificationRepo.notifications.collectAsState()
                     val listenerConnected by notificationRepo.isConnected.collectAsState()
+                    var viewHeightPx by remember { mutableFloatStateOf(0f) }
 
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .onSizeChanged { viewHeightPx = it.height.toFloat() }
                             .offset {
-                                IntOffset(0, (-(screenHeightPx.toFloat() * (1f - progress))).toInt())
+                                IntOffset(0, (-(viewHeightPx * (1f - progress))).toInt())
                             }
                     ) {
                         NotificationShade(
