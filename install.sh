@@ -104,6 +104,8 @@ restart_systemui() {
 
     # Force stop the existing SystemUI process
     adb shell "am force-stop com.android.systemui"
+    adb shell stop;
+    adb shell start
     sleep 1
 
     # Alternative: restart the framework (more thorough)
