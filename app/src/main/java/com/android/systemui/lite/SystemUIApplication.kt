@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.android.systemui.lite.CoreStartable
+import com.android.systemui.lite.core.GlobalActionsCoreStartable
 import com.android.systemui.lite.core.NavigationBarCoreStartable
 import com.android.systemui.lite.core.ShadeCoreStartable
 import com.android.systemui.lite.core.StatusBarCoreStartable
@@ -90,6 +91,8 @@ class SystemUIApplication : Application() {
         registerStartable(StatusBarCoreStartable::class.java, statusBar)
 
         registerStartable(NavigationBarCoreStartable::class.java, NavigationBarCoreStartable(this))
+
+        registerStartable(GlobalActionsCoreStartable::class.java, GlobalActionsCoreStartable(this))
 
         val sorted = startables.toSortedMap(compareBy { it.name })
         sorted.forEach { (cls, startable) ->

@@ -82,6 +82,7 @@ class CommandQueue {
             statusBarBinder = iStatusBar
 
             statusBarService!!.registerStatusBar(iStatusBar)
+            Log.d(TAG, ">>> registerStatusBar() called successfully with StatusBarStub")
             Log.d(TAG, "Successfully registered with StatusBarManagerService")
             return true
         } catch (e: Exception) {
@@ -162,6 +163,7 @@ class CommandQueue {
         }
 
         override fun showGlobalActionsMenu() {
+            Log.d(TAG, "<<< system_server called showGlobalActionsMenu()")
             mainHandler.post {
                 synchronized(callbacks) { callbacks.toList() }.forEach {
                     it.showGlobalActionsMenu()
@@ -170,6 +172,7 @@ class CommandQueue {
         }
 
         override fun showShutdownUi(isReboot: Boolean, reason: String?) {
+            Log.d(TAG, "<<< system_server called showShutdownUi(isReboot=$isReboot, reason=$reason)")
             mainHandler.post {
                 synchronized(callbacks) { callbacks.toList() }.forEach {
                     it.showShutdownUi(isReboot, reason)
