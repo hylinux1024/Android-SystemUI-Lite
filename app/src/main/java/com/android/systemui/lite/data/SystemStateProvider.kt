@@ -13,6 +13,8 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,6 +24,7 @@ class SystemStateProvider(
 ) {
     companion object {
         private const val TAG = "SystemStateProvider"
+        private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
     }
 
     data class BatteryState(
@@ -121,8 +124,7 @@ class SystemStateProvider(
     // --- Time ticker ---
     private val timeRunnable = object : Runnable {
         override fun run() {
-            val sdf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-            _timeString.value = sdf.format(java.util.Date())
+            _timeString.value = LocalTime.now().format(timeFormatter)
             mainHandler.postDelayed(this, 30000)
         }
     }
@@ -186,8 +188,7 @@ class SystemStateProvider(
         }
 
         // Time
-        val sdf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-        _timeString.value = sdf.format(java.util.Date())
+        _timeString.value = LocalTime.now().format(timeFormatter)
     }
 
     // --- Receiver management ---

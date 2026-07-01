@@ -10,7 +10,8 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
-import com.android.systemui.lite.SystemUIApplication
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 /**
  * StatusBarManager - The central coordinator for the real status bar.
@@ -27,6 +28,7 @@ class StatusBarManager(private val context: Context) {
 
     companion object {
         private const val TAG = "StatusBarManager"
+        private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -226,8 +228,7 @@ class StatusBarManager(private val context: Context) {
     }
 
     private fun updateTimeString() {
-        val sdf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-        val newTime = sdf.format(java.util.Date())
+        val newTime = LocalTime.now().format(timeFormatter)
         if (newTime != timeString) {
             timeString = newTime
             notifyTimeChanged(newTime)
