@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Email
@@ -72,6 +73,7 @@ fun NotificationShade(
     isFlashlightAvailable: Boolean = true,
     isAirplaneMode: Boolean,
     isAutoRotateOn: Boolean,
+    isBatterySaverOn: Boolean,
     isScreenRecording: Boolean,
     brightness: Float,
     mediaVolume: Float,
@@ -85,6 +87,7 @@ fun NotificationShade(
     onToggleFlashlight: () -> Unit,
     onToggleAirplaneMode: () -> Unit,
     onToggleAutoRotate: () -> Unit,
+    onToggleBatterySaver: () -> Unit,
     onToggleScreenRecording: () -> Unit,
     onSetBrightness: (Float) -> Unit,
     onSetMediaVolume: (Float) -> Unit,
@@ -161,6 +164,7 @@ fun NotificationShade(
                     Toggle("Flashlight", isFlashlightOn, available = isFlashlightAvailable) { onToggleFlashlight() },
                     Toggle("Airplane", isAirplaneMode) { onToggleAirplaneMode() },
                     Toggle("Auto-Rotate", isAutoRotateOn) { onToggleAutoRotate() },
+                    Toggle("Battery Saver", isBatterySaverOn) { onToggleBatterySaver() },
                     Toggle("Screen Rec", isScreenRecording) { onToggleScreenRecording() }
                 )
 
@@ -171,24 +175,17 @@ fun NotificationShade(
                 Spacer(Modifier.height(8.dp))
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Row 1
+                    // Row 1 — tiles 1..4
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        toggles.take(3).forEach { tile ->
+                        toggles.take(4).forEach { tile ->
                             QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(1f))
                         }
                     }
-                    // Row 2
+                    // Row 2 — tiles 5..8
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        toggles.drop(3).take(3).forEach { tile ->
+                        toggles.drop(4).forEach { tile ->
                             QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(1f))
                         }
-                    }
-                    // Row 3
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        toggles.drop(6).firstOrNull()?.let { tile ->
-                            QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(0.33f))
-                        }
-                        Spacer(Modifier.weight(0.67f))
                     }
                 }
 
@@ -315,6 +312,7 @@ fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, i
         Icon(imageVector = when (label) {
             "Wi-Fi" -> Icons.Default.Favorite; "Bluetooth" -> Icons.Default.Share; "DND" -> Icons.Default.Close
             "Flashlight" -> Icons.Default.Star; "Airplane" -> Icons.Default.Info; "Auto-Rotate" -> Icons.Default.Refresh
+            "Battery Saver" -> Icons.Default.BatterySaver; "Screen Rec" -> Icons.Default.Notifications
             else -> Icons.Default.Notifications
         }, contentDescription = label, tint = iconColor, modifier = Modifier.size(16.dp))
         Spacer(Modifier.height(4.dp))

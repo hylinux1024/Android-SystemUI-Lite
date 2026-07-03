@@ -16,6 +16,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.content.pm.PackageManager
 import android.util.Log
 import android.bluetooth.BluetoothAdapter
 import java.time.LocalTime
@@ -178,6 +179,14 @@ class SystemStateProvider(
                 "android.settings.ZEN_MODE_CHANGED" -> {
                     _dndEnabled.value = isDndEnabled()
                 }
+
+                PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> {
+                    // Live sync from platform broadcast. isPowerSaveMode() may briefly
+                    // return a stale value before the OS settles, so the receiver just
+                    // forwards whatever the platform reports; every-shade-open refresh
+                    // (refreshTileState) resyncs the canonical value.
+                    _batterySaverEnabled.value = isBatterySaverEnabled()
+                }
             }
         }
     }
@@ -294,6 +303,13 @@ class SystemStateProvider(
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
             addAction("android.settings.ZEN_MODE_CHANGED")
+        }
+        // ACTION_POWER_SAVE_MODE_CHANGED (API 21+) lets the tile track battery-saver
+        // state even when the user flips it from outside our app. Guarded because
+        // older APIs don't define the constant.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            @Suppress("DEPRECATION")
+            filter.addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
         }
         if (Build.VERSION.SDK_INT >= 34) {
             context.registerReceiver(systemReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -656,9 +672,67 @@ class SystemStateProvider(
     } catch (e: Exception) { false }
 
     fun toggleBatterySaver() {
-        // Direct API toggle is platform-gated; callers fall back to settings intent.
-        Log.d(TAG, "Battery saver toggle requested (system-controlled)")
-        _batterySaverEnabled.value = isBatterySaverEnabled()
+        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        if (pm == null) {
+            Log.e(TAG, "PowerManager not available; opening battery settings")
+            openBatterySettings()
+            return
+        }
+        val newState = !isBatterySaverEnabled()
+        // PowerManager.setPowerSaveModeEnabled is @SystemAPI, so it's not part of the
+        // compileSdk surface. Reflect into it — platform signature + WRITE_SECURE_SETTINGS
+        // (held by SystemUI) is ordinarily enough for the framework to accept. When the
+        // reflective call fails for any reason, fall back to the battery-settings intent so
+        // the tile is never a silent no-op (US-008 AC3/4).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            try {
+                val m = pm.javaClass.getMethod("setPowerSaveModeEnabled", Boolean::class.javaPrimitiveType)
+                val accepted = m.invoke(pm, newState) as Boolean
+                if (accepted) {
+                    _batterySaverEnabled.value = newState
+                    Log.d(TAG, "setPowerSaveModeEnabled($newState) accepted")
+                    return
+                }
+                Log.w(TAG, "setPowerSaveModeEnabled($newState) rejected; opening battery settings")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "setPowerSaveModeEnabled denied by SecurityManager; opening battery settings", e)
+            } catch (e: NoSuchMethodException) {
+                Log.w(TAG, "setPowerSaveModeEnabled not present on this platform; opening battery settings", e)
+            } catch (e: Exception) {
+                Log.e(TAG, "Reflective setPowerSaveModeEnabled failed: ${e.message}", e)
+            }
+        }
+        openBatterySettings()
+    }
+
+    private fun openBatterySettings() {
+        try {
+            // ACTION_POWER_SUMMARY was deprecated in API 29 and is no longer exposed
+            // under the compileSdk surface on API 35+. The Settings deep link below
+            // is the official replacement — all Android releases it exists on ship a
+            // system activity for it. We try that first, then fall back to the battery
+            // usage summary intent so the tile never silently fails on any device.
+            val pm = context.packageManager
+            val batterySaverIntent = Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (pm != null && batterySaverIntent.resolveActivity(pm) != null) {
+                context.startActivity(batterySaverIntent)
+                Log.d(TAG, "ACTION_BATTERY_SAVER_SETTINGS launched")
+                return
+            }
+            val usageIntent = Intent(Intent.ACTION_POWER_USAGE_SUMMARY).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (pm != null && usageIntent.resolveActivity(pm) != null) {
+                context.startActivity(usageIntent)
+                Log.d(TAG, "ACTION_POWER_USAGE_SUMMARY fallback launched")
+                return
+            }
+            Log.e(TAG, "No activity handles BATTERY_SAVER_SETTINGS or POWER_USAGE_SUMMARY")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open battery settings: ${e.message}", e)
+        }
     }
 
     // ========== Screen Recording ==========

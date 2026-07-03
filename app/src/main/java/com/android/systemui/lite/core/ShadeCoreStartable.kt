@@ -179,6 +179,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                     val flashlightOn by sp.flashlightEnabled.collectAsState()
                     val flashlightAvailableState = sp.flashlightAvailable.collectAsState()
                     val autoRotateOn by sp.autoRotateEnabled.collectAsState()
+                    val batterySaverOn by sp.batterySaverEnabled.collectAsState()
                     val screenRecording by sp.screenRecording.collectAsState()
                     val brightness by sp.brightness.collectAsState()
                     val mediaVolume by sp.mediaVolume.collectAsState()
@@ -206,6 +207,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                             isFlashlightAvailable = flashlightAvailableState.value ?: true,
                             isAirplaneMode = airplaneOn,
                             isAutoRotateOn = autoRotateOn,
+                            isBatterySaverOn = batterySaverOn,
                             isScreenRecording = screenRecording,
                             brightness = brightness / 255f,
                             mediaVolume = mediaVolume / 100f,
@@ -219,6 +221,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                             onToggleFlashlight = { sp.toggleFlashlight() },
                             onToggleAirplaneMode = { sp.toggleAirplaneMode() },
                             onToggleAutoRotate = { sp.toggleAutoRotate() },
+                            onToggleBatterySaver = { sp.toggleBatterySaver() },
                             onToggleScreenRecording = { sp.toggleScreenRecording() },
                             onSetBrightness = { sp.setBrightness((it * 255).toInt()) },
                             onSetMediaVolume = { sp.setMediaVolume((it * 100).toInt()) },
