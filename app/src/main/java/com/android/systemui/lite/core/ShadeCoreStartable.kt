@@ -214,6 +214,8 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                                 notificationRepo.clearAllNotifications()
                             },
                             onCloseShade = { animateShadeTo(0f) },
+                            onDragShade = { progress -> dragShade(progress) },
+                            onOpenShade = { flingShade(1f) },
                             onNotificationClick = { item ->
                                 try {
                                     item.contentIntent?.send()

@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -52,9 +53,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.android.systemui.lite.model.NotificationItem
@@ -88,6 +89,8 @@ fun NotificationShade(
     onDismissNotification: (Any) -> Unit,
     onClearAllNotifications: () -> Unit,
     onCloseShade: () -> Unit,
+    onDragShade: ((Float) -> Unit)? = null,
+    onOpenShade: (() -> Unit)? = null,
     onNotificationClick: (NotificationItem) -> Unit,
     onPlayPauseMusic: () -> Unit,
     onPrevTrack: () -> Unit,
@@ -96,27 +99,38 @@ fun NotificationShade(
 ) {
     val lazyListState = rememberLazyListState()
     var accumCloseY by remember { mutableFloatStateOf(0f) }
+    var viewHeightPx by remember { mutableFloatStateOf(0f) }
 
     val shadeCloseConnection = remember(lazyListState) {
         object : NestedScrollConnection {
             private fun isAtTop() = lazyListState.firstVisibleItemIndex == 0 && lazyListState.firstVisibleItemScrollOffset == 0
+
             override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                if (available.y < 0) {
-                    val atTop = isAtTop()
-                    if (atTop || source != NestedScrollSource.UserInput) {
-                        accumCloseY += -available.y
-                        return androidx.compose.ui.geometry.Offset(0f, available.y)
+                if (available.y < 0 && isAtTop()) {
+                    accumCloseY += -available.y
+                    if (viewHeightPx > 0f) {
+                        val progress = (1f - accumCloseY / viewHeightPx).coerceIn(0f, 1f)
+                        onDragShade?.invoke(progress)
+                    }
+                    return androidx.compose.ui.geometry.Offset(0f, available.y)
+                }
+                if (available.y > 0) {
+                    accumCloseY = (accumCloseY - available.y).coerceAtLeast(0f)
+                    if (viewHeightPx > 0f && accumCloseY > 0f) {
+                        val progress = (1f - accumCloseY / viewHeightPx).coerceIn(0f, 1f)
+                        onDragShade?.invoke(progress)
                     }
                 }
-                accumCloseY = 0f
                 return androidx.compose.ui.geometry.Offset.Zero
             }
+
             override suspend fun onPreFling(available: Velocity): Velocity {
                 if (available.y < 0 && accumCloseY > 120f) {
                     onCloseShade()
                     accumCloseY = 0f
                     return available
                 }
+                onOpenShade?.invoke()
                 accumCloseY = 0f
                 return Velocity.Zero
             }
@@ -126,6 +140,7 @@ fun NotificationShade(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .onSizeChanged { viewHeightPx = it.height.toFloat() }
             .background(Color.Black.copy(alpha = 0.92f))
             .padding(top = (statusBarHeightDp + 16).dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
             .nestedScroll(shadeCloseConnection)
