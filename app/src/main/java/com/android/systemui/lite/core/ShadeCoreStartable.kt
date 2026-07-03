@@ -173,6 +173,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                 MaterialTheme {
                     val wifiOn by sp.wifiEnabled.collectAsState()
                     val bluetoothOn by sp.bluetoothEnabled.collectAsState()
+                    val bluetoothTransitioning by sp.bluetoothTransitioning.collectAsState()
                     val dndOn by sp.dndEnabled.collectAsState()
                     val airplaneOn by sp.airplaneModeEnabled.collectAsState()
                     val flashlightOn by sp.flashlightEnabled.collectAsState()
@@ -198,6 +199,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                             themeColor = wallpaperColors.primary,
                             isWifiOn = wifiOn,
                             isBluetoothOn = bluetoothOn,
+                            isBluetoothTransitioning = bluetoothTransitioning,
                             isDoNotDisturb = dndOn,
                             isFlashlightOn = flashlightOn,
                             isAirplaneMode = airplaneOn,

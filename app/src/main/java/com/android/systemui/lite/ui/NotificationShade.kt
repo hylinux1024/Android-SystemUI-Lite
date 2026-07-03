@@ -66,6 +66,7 @@ fun NotificationShade(
     themeColor: Color,
     isWifiOn: Boolean,
     isBluetoothOn: Boolean,
+    isBluetoothTransitioning: Boolean = false,
     isDoNotDisturb: Boolean,
     isFlashlightOn: Boolean,
     isAirplaneMode: Boolean,
@@ -147,14 +148,19 @@ fun NotificationShade(
     ) {
         Box(Modifier.scrollable(rememberScrollState(), Orientation.Vertical)) {
             Column {
+                // Each tile carries its active state and an optional per-tile
+                // transitioning flag. Currently only Bluetooth uses the
+                // transition indicator (US-005).
+                data class Toggle(val label: String, val active: Boolean, val transitioning: Boolean = false, val onToggle: () -> Unit)
+
                 val toggles = listOf(
-                    Triple("Wi-Fi", isWifiOn, onToggleWifi),
-                    Triple("Bluetooth", isBluetoothOn, onToggleBluetooth),
-                    Triple("DND", isDoNotDisturb, onToggleDnd),
-                    Triple("Flashlight", isFlashlightOn, onToggleFlashlight),
-                    Triple("Airplane", isAirplaneMode, onToggleAirplaneMode),
-                    Triple("Auto-Rotate", isAutoRotateOn, onToggleAutoRotate),
-                    Triple("Screen Rec", isScreenRecording, onToggleScreenRecording)
+                    Toggle("Wi-Fi", isWifiOn) { onToggleWifi() },
+                    Toggle("Bluetooth", isBluetoothOn, isBluetoothTransitioning) { onToggleBluetooth() },
+                    Toggle("DND", isDoNotDisturb) { onToggleDnd() },
+                    Toggle("Flashlight", isFlashlightOn) { onToggleFlashlight() },
+                    Toggle("Airplane", isAirplaneMode) { onToggleAirplaneMode() },
+                    Toggle("Auto-Rotate", isAutoRotateOn) { onToggleAutoRotate() },
+                    Toggle("Screen Rec", isScreenRecording) { onToggleScreenRecording() }
                 )
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -167,19 +173,19 @@ fun NotificationShade(
                     // Row 1
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         toggles.take(3).forEach { tile ->
-                            QSTile(tile.first, tile.second, tile.third, themeColor, Modifier.weight(1f))
+                            QSTile(tile.label, tile.active, tile.transitioning, tile.onToggle, themeColor, Modifier.weight(1f))
                         }
                     }
                     // Row 2
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         toggles.drop(3).take(3).forEach { tile ->
-                            QSTile(tile.first, tile.second, tile.third, themeColor, Modifier.weight(1f))
+                            QSTile(tile.label, tile.active, tile.transitioning, tile.onToggle, themeColor, Modifier.weight(1f))
                         }
                     }
                     // Row 3
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         toggles.drop(6).firstOrNull()?.let { tile ->
-                            QSTile(tile.first, tile.second, tile.third, themeColor, Modifier.weight(0.33f))
+                            QSTile(tile.label, tile.active, tile.transitioning, tile.onToggle, themeColor, Modifier.weight(0.33f))
                         }
                         Spacer(Modifier.weight(0.67f))
                     }
@@ -260,24 +266,49 @@ fun NotificationShade(
 }
 
 @Composable
-fun QSTile(label: String, isActive: Boolean, onClick: () -> Unit, themeColor: Color, modifier: Modifier = Modifier) {
+fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, onClick: () -> Unit, themeColor: Color, modifier: Modifier = Modifier) {
     val activeBg = Color(0xFFD3E4FF)
     val inactiveBg = Color(0xFF30343A)
     val activeTextColor = Color(0xFF001C38)
     val inactiveTextColor = Color(0xFFE2E2E6)
+    // transition colors
+    val transitionBg = themeColor.copy(alpha = 0.18f)
+    val transitionTextColor = Color(0xFFE2E2E6)
+
+    val bg = when {
+        isTransitioning -> transitionBg
+        isActive -> activeBg
+        else -> inactiveBg
+    }
+    val border = when {
+        isTransitioning -> themeColor
+        isActive -> Color.Transparent
+        else -> Color.White.copy(alpha = 0.05f)
+    }
+    val textColor = when {
+        isTransitioning -> transitionTextColor
+        isActive -> activeTextColor
+        else -> inactiveTextColor.copy(alpha = 0.8f)
+    }
+    val iconColor = when {
+        isTransitioning -> transitionTextColor
+        isActive -> activeTextColor
+        else -> inactiveTextColor
+    }
+
     Column(
-        modifier.shadow(4.dp, RoundedCornerShape(16.dp)).background(if (isActive) activeBg else inactiveBg, RoundedCornerShape(16.dp))
-            .border(1.dp, if (isActive) Color.Transparent else Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
-            .clickable { onClick() }.padding(vertical = 10.dp, horizontal = 4.dp),
+        modifier.shadow(4.dp, RoundedCornerShape(16.dp)).background(bg, RoundedCornerShape(16.dp))
+            .border(1.dp, border, RoundedCornerShape(16.dp))
+            .clickable(enabled = !isTransitioning) { onClick() }.padding(vertical = 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
     ) {
         Icon(imageVector = when (label) {
             "Wi-Fi" -> Icons.Default.Favorite; "Bluetooth" -> Icons.Default.Share; "DND" -> Icons.Default.Close
             "Flashlight" -> Icons.Default.Star; "Airplane" -> Icons.Default.Info; "Auto-Rotate" -> Icons.Default.Refresh
             else -> Icons.Default.Notifications
-        }, contentDescription = label, tint = if (isActive) activeTextColor else inactiveTextColor, modifier = Modifier.size(16.dp))
+        }, contentDescription = label, tint = iconColor, modifier = Modifier.size(16.dp))
         Spacer(Modifier.height(4.dp))
-        Text(label, color = if (isActive) activeTextColor else inactiveTextColor.copy(alpha = 0.8f), fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, color = textColor, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

@@ -61,6 +61,9 @@ class SystemStateProvider(
     private val _bluetoothEnabled = MutableStateFlow(false)
     val bluetoothEnabled: StateFlow<Boolean> = _bluetoothEnabled.asStateFlow()
 
+    private val _bluetoothTransitioning = MutableStateFlow(false)
+    val bluetoothTransitioning: StateFlow<Boolean> = _bluetoothTransitioning.asStateFlow()
+
     private val _dndEnabled = MutableStateFlow(false)
     val dndEnabled: StateFlow<Boolean> = _dndEnabled.asStateFlow()
 
@@ -129,7 +132,32 @@ class SystemStateProvider(
                 }
 
                 BluetoothAdapter.ACTION_STATE_CHANGED -> {
-                    _bluetoothEnabled.value = isBluetoothEnabled()
+                    // EXTRA_STATE carries the live adapter state. Track turning
+                    // transitions explicitly so the tile can render an in-progress
+                    // visual and ignore rapid taps until the adapter settles.
+                    when (val state = intent.getIntExtra(
+                        BluetoothAdapter.EXTRA_STATE,
+                        BluetoothAdapter.ERROR
+                    )) {
+                        BluetoothAdapter.STATE_TURNING_ON -> {
+                            _bluetoothTransitioning.value = true
+                            Log.d(TAG, "Bluetooth STATE_TURNING_ON")
+                        }
+                        BluetoothAdapter.STATE_TURNING_OFF -> {
+                            _bluetoothTransitioning.value = true
+                            Log.d(TAG, "Bluetooth STATE_TURNING_OFF")
+                        }
+                        BluetoothAdapter.STATE_ON -> {
+                            _bluetoothEnabled.value = true
+                            _bluetoothTransitioning.value = false
+                            Log.d(TAG, "Bluetooth STATE_ON")
+                        }
+                        BluetoothAdapter.STATE_OFF -> {
+                            _bluetoothEnabled.value = false
+                            _bluetoothTransitioning.value = false
+                            Log.d(TAG, "Bluetooth STATE_OFF")
+                        }
+                    }
                 }
 
                 Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
@@ -177,6 +205,7 @@ class SystemStateProvider(
     fun refreshTileState() {
         _wifiEnabled.value = isWifiEnabled()
         _bluetoothEnabled.value = isBluetoothEnabled()
+        _bluetoothTransitioning.value = false
         _airplaneModeEnabled.value = isAirplaneModeEnabled()
         _autoRotateEnabled.value = isAutoRotateEnabled()
         _batterySaverEnabled.value = isBatterySaverEnabled()
@@ -334,12 +363,23 @@ class SystemStateProvider(
     } catch (e: Exception) { false }
 
     fun toggleBluetooth() {
-        val newState = !_bluetoothEnabled.value
+        // While STATE_TURNING_ON or STATE_TURNING_OFF is in flight, ignore
+        // repeated taps — the broadcast receiver will drive _bluetoothEnabled
+        // to the settled value. AC5/US-005: tile must not show wrong state.
+        if (_bluetoothTransitioning.value) {
+            Log.d(TAG, "Bluetooth tap ignored — transition already in flight")
+            return
+        }
         try {
-            val adapter = BluetoothAdapter.getDefaultAdapter() ?: return
-            if (newState) adapter.enable() else adapter.disable()
-            _bluetoothEnabled.value = newState
-            Log.d(TAG, "Bluetooth toggled to $newState")
+            val adapter = BluetoothAdapter.getDefaultAdapter()
+            if (adapter == null) {
+                Log.e(TAG, "BluetoothAdapter.getDefaultAdapter() returned null")
+                return
+            }
+            if (_bluetoothEnabled.value) adapter.disable() else adapter.enable()
+            Log.d(TAG, "Bluetooth enable/disable requested")
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Permission denied for enable/disable", e)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to toggle Bluetooth: ${e.message}", e)
         }
