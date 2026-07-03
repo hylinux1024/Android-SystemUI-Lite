@@ -156,6 +156,7 @@ class SystemStateProvider(
         Log.d(TAG, "Starting SystemStateProvider...")
         readInitialState()
         registerReceiver()
+        registerAutoRotateObserver()
         mainHandler.post(timeRunnable)
         Log.d(TAG, "SystemStateProvider started (battery=${_battery.value.level}%, wifi=${_wifiEnabled.value})")
     }
@@ -163,7 +164,24 @@ class SystemStateProvider(
     fun stop() {
         Log.d(TAG, "Stopping SystemStateProvider...")
         unregisterReceiver()
+        unregisterAutoRotateObserver()
         mainHandler.removeCallbacks(timeRunnable)
+    }
+
+    /**
+     * Re-read every externally-mutable QS tile state from the platform so the shade reflects
+     * any change the user made while it was closed (e.g. airplane mode toggled from system
+     * Settings). Wired into ShadeCoreStartable.ensureShadeWindow so it runs on every shade
+     * open. See US-003 AC3.
+     */
+    fun refreshTileState() {
+        _wifiEnabled.value = isWifiEnabled()
+        _bluetoothEnabled.value = isBluetoothEnabled()
+        _airplaneModeEnabled.value = isAirplaneModeEnabled()
+        _autoRotateEnabled.value = isAutoRotateEnabled()
+        _batterySaverEnabled.value = isBatterySaverEnabled()
+        _dndEnabled.value = isDndEnabled()
+        Log.d(TAG, "Tile state refreshed from platform")
     }
 
     // --- Initial state ---
@@ -240,6 +258,22 @@ class SystemStateProvider(
         if (!receiverRegistered) return
         try { context.unregisterReceiver(systemReceiver) } catch (_: Exception) {}
         receiverRegistered = false
+    }
+
+    private fun registerAutoRotateObserver() {
+        try {
+            context.contentResolver.registerContentObserver(
+                Settings.System.getUriFor(Settings.System.ACCELEROMETER_ROTATION),
+                false,
+                autoRotateObserver
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register auto-rotate ContentObserver: ${e.message}", e)
+        }
+    }
+
+    private fun unregisterAutoRotateObserver() {
+        try { context.contentResolver.unregisterContentObserver(autoRotateObserver) } catch (_: Exception) {}
     }
 
     // ========== WiFi ==========
@@ -367,12 +401,36 @@ class SystemStateProvider(
             intent.putExtra("state", newState)
             context.sendBroadcast(intent)
             Log.d(TAG, "Airplane mode toggled to $newState")
+        } catch (e: SecurityException) {
+            // WRITE_SECURE_SETTINGS is required to flip the global setting from a normal
+            // app. When denied, bounce the user to the system Airplane Mode settings page
+            // rather than leaving the tile a silent no-op — same graceful-fallback shape
+            // as toggleWifi on Q+.
+            Log.w(TAG, "Permission denied for AIRPLANE_MODE_ON write; opening Airplane settings panel", e)
+            openAirplaneModeSettings()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to toggle airplane mode: ${e.message}", e)
         }
     }
 
+    private fun openAirplaneModeSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open airplane mode settings: ${e.message}", e)
+        }
+    }
+
     // ========== Auto-Rotate ==========
+
+    private val autoRotateObserver = object : android.database.ContentObserver(mainHandler) {
+        override fun onChange(selfChange: Boolean) {
+            _autoRotateEnabled.value = isAutoRotateEnabled()
+        }
+    }
 
     private fun isAutoRotateEnabled(): Boolean = try {
         Settings.System.getInt(context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) != 0

@@ -138,6 +138,10 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     private fun ensureShadeWindow() {
         if (isShadeWindowAdded) return
 
+        // Re-read all platform-controlled QS state so the shade reflects anything the
+        // user changed while it was closed (e.g. airplane mode from system Settings).
+        sp.refreshTileState()
+
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         @Suppress("DEPRECATION")
