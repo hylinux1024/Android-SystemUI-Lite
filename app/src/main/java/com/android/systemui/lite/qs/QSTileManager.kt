@@ -32,6 +32,9 @@ class QSTileManager(context: Context) {
     val ringVolume: StateFlow<Int> get() = sp.ringVolume
     val alarmVolume: StateFlow<Int> get() = sp.alarmVolume
 
+    /** Return the current NotificationPolicy (as Any — the concrete type is @SystemAPI), or null if unavailable. */
+    fun getNotificationPolicy(): Any? = sp.getNotificationPolicy()
+
     fun toggleWifi() = sp.toggleWifi()
     fun toggleBluetooth() = sp.toggleBluetooth()
     fun toggleDnd() = sp.toggleDnd()

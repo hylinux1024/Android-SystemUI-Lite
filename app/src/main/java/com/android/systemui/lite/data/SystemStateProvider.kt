@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.app.NotificationManager
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
@@ -425,15 +426,78 @@ class SystemStateProvider(
         Settings.Global.getInt(context.contentResolver, "zen_mode", 0) != 0
     } catch (e: Exception) { false }
 
+    /**
+     * Maps the current DND cycle phase to a toggle result. Cycles:
+     * OFF → PRIORITY → ALARMS → NONE → OFF. Each phase corresponds to a
+     * NotificationManager.INTERRUPTION_FILTER_* value and a matching ZEN_MODE int.
+     */
     fun toggleDnd() {
-        val newState = !_dndEnabled.value
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        val currentFilter = nm?.currentInterruptionFilter ?: NotificationManager.INTERRUPTION_FILTER_ALL
+        val nextFilter = when (currentFilter) {
+            NotificationManager.INTERRUPTION_FILTER_ALL -> NotificationManager.INTERRUPTION_FILTER_PRIORITY
+            NotificationManager.INTERRUPTION_FILTER_PRIORITY -> NotificationManager.INTERRUPTION_FILTER_ALARMS
+            NotificationManager.INTERRUPTION_FILTER_ALARMS -> NotificationManager.INTERRUPTION_FILTER_NONE
+            else -> NotificationManager.INTERRUPTION_FILTER_ALL
+        }
+        applyDndFilter(nm, nextFilter)
+    }
+
+    /**
+     * Apply a DND filter: call setInterruptionFilter (the canonical API) when the app
+     * holds ACCESS_NOTIFICATION_POLICY, then write ZEN_MODE for backward consumers and
+     * refresh the live tile StateFlow. Falls back to writing ZEN_MODE alone if the
+     * interruption-filter call is denied.
+     */
+    private fun applyDndFilter(nm: NotificationManager?, filter: Int) {
+        val zenMode = when (filter) {
+            NotificationManager.INTERRUPTION_FILTER_NONE -> 2
+            NotificationManager.INTERRUPTION_FILTER_ALARMS -> 3
+            NotificationManager.INTERRUPTION_FILTER_PRIORITY -> 1
+            else -> 0
+        }
+        // On builds with a notification assistant role (API 28+) apps can drive
+        // the filter directly; on other builds we still write ZEN_MODE so the tile
+        // and other consumers stay in sync.
+        if (nm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                nm.setInterruptionFilter(filter)
+                Log.d(TAG, "setInterruptionFilter($filter) accepted")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "setInterruptionFilter denied; writing ZEN_MODE only", e)
+            } catch (e: Exception) {
+                Log.e(TAG, "setInterruptionFilter failed: ${e.message}", e)
+            }
+        }
         try {
-            val zenMode = if (newState) 1 else 0
             Settings.Global.putInt(context.contentResolver, "zen_mode", zenMode)
-            _dndEnabled.value = newState
-            Log.d(TAG, "DND toggled to $newState")
+        } catch (e: SecurityException) {
+            Log.w(TAG, "ZEN_MODE write denied — Visual tile state will not update", e)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to toggle DND: ${e.message}", e)
+            Log.e(TAG, "Failed to write ZEN_MODE: ${e.message}", e)
+        }
+        _dndEnabled.value = (zenMode != 0)
+    }
+
+    /**
+     * The active NotificationPolicy reflects what system DND rules would allow
+     * while DND is ON. Used by US-007 AC5 — after enabling DND the policy should
+     * report a restricted priorityCategories / suppressedEffect values consistent
+     * with the current filter.
+     */
+    /**
+     * Returns the current NotificationPolicy (reflects DND state after enabling),
+     * or null if unavailable. The concrete NotificationManager.NotificationPolicy
+     * type is @SystemAPI so we surface it as Any to avoid compile-time coupling.
+     */
+    fun getNotificationPolicy(): Any? {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && nm != null) {
+                nm.notificationPolicy
+            } else null
+        } catch (e: Exception) {
+            null
         }
     }
 
