@@ -177,6 +177,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                     val dndOn by sp.dndEnabled.collectAsState()
                     val airplaneOn by sp.airplaneModeEnabled.collectAsState()
                     val flashlightOn by sp.flashlightEnabled.collectAsState()
+                    val flashlightAvailableState = sp.flashlightAvailable.collectAsState()
                     val autoRotateOn by sp.autoRotateEnabled.collectAsState()
                     val screenRecording by sp.screenRecording.collectAsState()
                     val brightness by sp.brightness.collectAsState()
@@ -202,6 +203,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                             isBluetoothTransitioning = bluetoothTransitioning,
                             isDoNotDisturb = dndOn,
                             isFlashlightOn = flashlightOn,
+                            isFlashlightAvailable = flashlightAvailableState.value ?: true,
                             isAirplaneMode = airplaneOn,
                             isAutoRotateOn = autoRotateOn,
                             isScreenRecording = screenRecording,

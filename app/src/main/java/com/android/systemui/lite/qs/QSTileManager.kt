@@ -22,6 +22,7 @@ class QSTileManager(context: Context) {
     val bluetoothTransitioning: StateFlow<Boolean> get() = sp.bluetoothTransitioning
     val dndEnabled: StateFlow<Boolean> get() = sp.dndEnabled
     val flashlightEnabled: StateFlow<Boolean> get() = sp.flashlightEnabled
+    val flashlightAvailable: StateFlow<Boolean?> get() = sp.flashlightAvailable
     val airplaneModeEnabled: StateFlow<Boolean> get() = sp.airplaneModeEnabled
     val autoRotateEnabled: StateFlow<Boolean> get() = sp.autoRotateEnabled
     val batterySaverEnabled: StateFlow<Boolean> get() = sp.batterySaverEnabled

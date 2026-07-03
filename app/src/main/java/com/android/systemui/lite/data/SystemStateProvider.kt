@@ -4,6 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.net.wifi.WifiManager
@@ -69,6 +71,14 @@ class SystemStateProvider(
 
     private val _flashlightEnabled = MutableStateFlow(false)
     val flashlightEnabled: StateFlow<Boolean> = _flashlightEnabled.asStateFlow()
+
+    // Null when the device has no torch-capable back camera. When null, the tile is
+    // disabled and toggleFlashlight is a no-op (renders grey, not clickable).
+    private val _flashlightAvailable = MutableStateFlow<Boolean?>(null)
+    val flashlightAvailable: StateFlow<Boolean?> = _flashlightAvailable.asStateFlow()
+
+    // Best torch-capable camera id — cached so toggleFlashlight does not scan every tap.
+    private var torchCameraId: String? = null
 
     private val _airplaneModeEnabled = MutableStateFlow(false)
     val airplaneModeEnabled: StateFlow<Boolean> = _airplaneModeEnabled.asStateFlow()
@@ -185,6 +195,7 @@ class SystemStateProvider(
         readInitialState()
         registerReceiver()
         registerAutoRotateObserver()
+        registerTorchCallback()
         mainHandler.post(timeRunnable)
         Log.d(TAG, "SystemStateProvider started (battery=${_battery.value.level}%, wifi=${_wifiEnabled.value})")
     }
@@ -193,6 +204,7 @@ class SystemStateProvider(
         Log.d(TAG, "Stopping SystemStateProvider...")
         unregisterReceiver()
         unregisterAutoRotateObserver()
+        unregisterTorchCallback()
         mainHandler.removeCallbacks(timeRunnable)
     }
 
@@ -210,6 +222,10 @@ class SystemStateProvider(
         _autoRotateEnabled.value = isAutoRotateEnabled()
         _batterySaverEnabled.value = isBatterySaverEnabled()
         _dndEnabled.value = isDndEnabled()
+        // Torch state isn't stored anywhere queryable; AC3/US-006's every-open sync
+        // is best handled by re-arming the TorchCallback below and falling back to
+        // the cached _flashlightEnabled (preserved across shade open/close because
+        // SystemStateProvider lives in the Koin singleton scope).
         Log.d(TAG, "Tile state refreshed from platform")
     }
 
@@ -238,7 +254,10 @@ class SystemStateProvider(
         _batterySaverEnabled.value = isBatterySaverEnabled()
         _screenRecording.value = false
         _brightness.value = getCurrentBrightness()
-        _flashlightEnabled.value = false
+        // torch state has no queryable source — do NOT reset _flashlightEnabled here;
+        // the TorchCallback registered after readInitialState pushes the real state and
+        // is the authoritative AC3 cold-start read. Only (re)detect the torch-capable id.
+        detectTorchCamera()
 
         // Volume
         audioManager?.let { am ->
@@ -303,6 +322,21 @@ class SystemStateProvider(
 
     private fun unregisterAutoRotateObserver() {
         try { context.contentResolver.unregisterContentObserver(autoRotateObserver) } catch (_: Exception) {}
+    }
+
+    private fun registerTorchCallback() {
+        if (_flashlightAvailable.value == null) detectTorchCamera()
+        val cm = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return
+        try {
+            cm.registerTorchCallback(torchCallback, mainHandler)
+        } catch (e: Exception) {
+            Log.e(TAG, "registerTorchCallback failed: ${e.message}", e)
+        }
+    }
+
+    private fun unregisterTorchCallback() {
+        val cm = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return
+        try { cm.unregisterTorchCallback(torchCallback) } catch (_: Exception) {}
     }
 
     // ========== WiFi ==========
@@ -405,18 +439,77 @@ class SystemStateProvider(
 
     // ========== Flashlight ==========
 
+    /**
+     * Pick the first camera that advertises INFO_CHARACTERISTICS_TORCH_INFO_AVAILABLE
+     * (or any back camera with FLASH_INFO_AVAILABLE on older devices). Result cached in
+     * [torchCameraId]; callers should first check [flashlightAvailable] to decide whether
+     * the tile is interactive.
+     */
+    private fun detectTorchCamera(): String? {
+        val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
+        val id = try {
+            cameraManager?.cameraIdList?.firstOrNull { id ->
+                val chars = cameraManager.getCameraCharacteristics(id)
+                val hasFlash = chars.get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                // Lens-facing BACK (0) or EXTERNAL (2) — FRONT cameras almost never have a usable torch.
+                val facing = chars.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)
+                hasFlash && (facing == android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK ||
+                             facing == android.hardware.camera2.CameraCharacteristics.LENS_FACING_EXTERNAL)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "detectTorchCamera failed: ${e.message}", e)
+            null
+        }
+        torchCameraId = id
+        _flashlightAvailable.value = id != null
+        Log.d(TAG, "detectTorchCamera: ${id ?: "none"}")
+        return id
+    }
+
+    /**
+     * CameraManager.TorchCallback drives live tile sync while the shade is open —
+     * torch state has no system-wide content provider so this callback (plus a periodic
+     * re-read on every [refreshTileState]) is the only reliable cross-process AC3/US-006
+     * signal.
+     */
+    private val torchCallback = object : CameraManager.TorchCallback() {
+        override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
+            if (cameraId == torchCameraId) {
+                _flashlightEnabled.value = enabled
+                Log.d(TAG, "torch callback: cameraId=$cameraId enabled=$enabled")
+            }
+        }
+
+        override fun onTorchModeUnavailable(cameraId: String) {
+            if (cameraId == torchCameraId) {
+                _flashlightEnabled.value = false
+                _flashlightAvailable.value = false
+                Log.d(TAG, "torch mode unavailable: cameraId=$cameraId")
+            }
+        }
+    }
+
     fun toggleFlashlight() {
+        // No torch-capable camera — keep the tile disabled and never call setTorchMode.
+        val cm = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
+        if (cm == null || torchCameraId == null) {
+            Log.w(TAG, "Flashlight not available on this device (no torch-capable camera)")
+            _flashlightAvailable.value = false
+            return
+        }
         val newState = !_flashlightEnabled.value
         try {
-            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
-            cameraManager?.let { cm ->
-                val cameraId = cm.cameraIdList?.firstOrNull()
-                if (cameraId != null) {
-                    cm.setTorchMode(cameraId, newState)
-                    _flashlightEnabled.value = newState
-                    Log.d(TAG, "Flashlight toggled to $newState")
-                }
-            }
+            cm.setTorchMode(torchCameraId!!, newState)
+            // Don't pre-update the state — the TorchCallback below will fire on the
+            // actual adapter transition and drive _flashlightEnabled to match reality.
+            Log.d(TAG, "Flashlight setTorchMode($newState) requested for $torchCameraId")
+        } catch (e: android.hardware.camera2.CameraAccessException) {
+            Log.e(TAG, "CameraAccessException toggling flashlight: ${e.message}", e)
+        } catch (e: IllegalArgumentException) {
+            // CameraId is not valid on this device — treat as unavailable.
+            Log.e(TAG, "CameraId $torchCameraId rejected by setTorchMode; marking unavailable", e)
+            torchCameraId = null
+            _flashlightAvailable.value = false
         } catch (e: Exception) {
             Log.e(TAG, "Failed to toggle flashlight: ${e.message}", e)
         }

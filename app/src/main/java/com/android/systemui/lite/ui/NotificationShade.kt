@@ -69,6 +69,7 @@ fun NotificationShade(
     isBluetoothTransitioning: Boolean = false,
     isDoNotDisturb: Boolean,
     isFlashlightOn: Boolean,
+    isFlashlightAvailable: Boolean = true,
     isAirplaneMode: Boolean,
     isAutoRotateOn: Boolean,
     isScreenRecording: Boolean,
@@ -148,16 +149,16 @@ fun NotificationShade(
     ) {
         Box(Modifier.scrollable(rememberScrollState(), Orientation.Vertical)) {
             Column {
-                // Each tile carries its active state and an optional per-tile
-                // transitioning flag. Currently only Bluetooth uses the
-                // transition indicator (US-005).
-                data class Toggle(val label: String, val active: Boolean, val transitioning: Boolean = false, val onToggle: () -> Unit)
+                // Each tile carries its active state, an optional per-tile transitioning
+                // flag (Bluetooth — US-005), and an optional availability flag
+                // (Flashlight — US-006: disabled/grey when the device has no torch).
+                data class Toggle(val label: String, val active: Boolean, val transitioning: Boolean = false, val available: Boolean = true, val onToggle: () -> Unit)
 
                 val toggles = listOf(
                     Toggle("Wi-Fi", isWifiOn) { onToggleWifi() },
                     Toggle("Bluetooth", isBluetoothOn, isBluetoothTransitioning) { onToggleBluetooth() },
                     Toggle("DND", isDoNotDisturb) { onToggleDnd() },
-                    Toggle("Flashlight", isFlashlightOn) { onToggleFlashlight() },
+                    Toggle("Flashlight", isFlashlightOn, available = isFlashlightAvailable) { onToggleFlashlight() },
                     Toggle("Airplane", isAirplaneMode) { onToggleAirplaneMode() },
                     Toggle("Auto-Rotate", isAutoRotateOn) { onToggleAutoRotate() },
                     Toggle("Screen Rec", isScreenRecording) { onToggleScreenRecording() }
@@ -173,19 +174,19 @@ fun NotificationShade(
                     // Row 1
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         toggles.take(3).forEach { tile ->
-                            QSTile(tile.label, tile.active, tile.transitioning, tile.onToggle, themeColor, Modifier.weight(1f))
+                            QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(1f))
                         }
                     }
                     // Row 2
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         toggles.drop(3).take(3).forEach { tile ->
-                            QSTile(tile.label, tile.active, tile.transitioning, tile.onToggle, themeColor, Modifier.weight(1f))
+                            QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(1f))
                         }
                     }
                     // Row 3
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         toggles.drop(6).firstOrNull()?.let { tile ->
-                            QSTile(tile.label, tile.active, tile.transitioning, tile.onToggle, themeColor, Modifier.weight(0.33f))
+                            QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(0.33f))
                         }
                         Spacer(Modifier.weight(0.67f))
                     }
@@ -266,7 +267,7 @@ fun NotificationShade(
 }
 
 @Composable
-fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, onClick: () -> Unit, themeColor: Color, modifier: Modifier = Modifier) {
+fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, isAvailable: Boolean = true, onClick: () -> Unit, themeColor: Color, modifier: Modifier = Modifier) {
     val activeBg = Color(0xFFD3E4FF)
     val inactiveBg = Color(0xFF30343A)
     val activeTextColor = Color(0xFF001C38)
@@ -274,23 +275,32 @@ fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, o
     // transition colors
     val transitionBg = themeColor.copy(alpha = 0.18f)
     val transitionTextColor = Color(0xFFE2E2E6)
+    // unavailable (no torch / hardware missing) — flat grey, no highlight, no press.
+    val unavailableBg = Color(0xFF1C1C1E)
+    val unavailableTextColor = Color.White.copy(alpha = 0.28f)
 
+    // When unavailable, tile is neither active nor press-reacting; show a static
+    // greyscale visual so the user understands the feature is missing (US-006 AC4).
     val bg = when {
+        !isAvailable -> unavailableBg
         isTransitioning -> transitionBg
         isActive -> activeBg
         else -> inactiveBg
     }
     val border = when {
+        !isAvailable -> Color.White.copy(alpha = 0.04f)
         isTransitioning -> themeColor
         isActive -> Color.Transparent
         else -> Color.White.copy(alpha = 0.05f)
     }
     val textColor = when {
+        !isAvailable -> unavailableTextColor
         isTransitioning -> transitionTextColor
         isActive -> activeTextColor
         else -> inactiveTextColor.copy(alpha = 0.8f)
     }
     val iconColor = when {
+        !isAvailable -> unavailableTextColor
         isTransitioning -> transitionTextColor
         isActive -> activeTextColor
         else -> inactiveTextColor
@@ -299,7 +309,7 @@ fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, o
     Column(
         modifier.shadow(4.dp, RoundedCornerShape(16.dp)).background(bg, RoundedCornerShape(16.dp))
             .border(1.dp, border, RoundedCornerShape(16.dp))
-            .clickable(enabled = !isTransitioning) { onClick() }.padding(vertical = 10.dp, horizontal = 4.dp),
+            .clickable(enabled = isAvailable && !isTransitioning) { onClick() }.padding(vertical = 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
     ) {
         Icon(imageVector = when (label) {
