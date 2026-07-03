@@ -41,9 +41,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.onSizeChanged
@@ -303,21 +311,46 @@ fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, i
         else -> inactiveTextColor
     }
 
+    // Recording pulse: for an active Screen Rec tile, pulse a red dot so the tile's
+    // recording state is clearly "animated" (US-009 AC3). Non-recording tiles bypass
+    // the transition entirely so we don't pay an extra animation frame per frame.
+    val showRecordingPulse = isActive && label == "Screen Rec"
+    val recordingPulse by animateRecordingPulse(showRecordingPulse, label)
+
     Column(
         modifier.shadow(4.dp, RoundedCornerShape(16.dp)).background(bg, RoundedCornerShape(16.dp))
             .border(1.dp, border, RoundedCornerShape(16.dp))
             .clickable(enabled = isAvailable && !isTransitioning) { onClick() }.padding(vertical = 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
     ) {
-        Icon(imageVector = when (label) {
-            "Wi-Fi" -> Icons.Default.Favorite; "Bluetooth" -> Icons.Default.Share; "DND" -> Icons.Default.Close
-            "Flashlight" -> Icons.Default.Star; "Airplane" -> Icons.Default.Info; "Auto-Rotate" -> Icons.Default.Refresh
-            "Battery Saver" -> Icons.Default.BatterySaver; "Screen Rec" -> Icons.Default.Notifications
-            else -> Icons.Default.Notifications
-        }, contentDescription = label, tint = iconColor, modifier = Modifier.size(16.dp))
+        Box {
+            Icon(imageVector = when (label) {
+                "Wi-Fi" -> Icons.Default.Favorite; "Bluetooth" -> Icons.Default.Share; "DND" -> Icons.Default.Close
+                "Flashlight" -> Icons.Default.Star; "Airplane" -> Icons.Default.Info; "Auto-Rotate" -> Icons.Default.Refresh
+                "Battery Saver" -> Icons.Default.BatterySaver; "Screen Rec" -> Icons.Default.Notifications
+                else -> Icons.Default.Notifications
+            }, contentDescription = label, tint = iconColor, modifier = Modifier.size(16.dp))
+            if (isActive && label == "Screen Rec") {
+                // Pulsing red "recording" dot in the corner beside the icon.
+                Canvas(Modifier.size(8.dp).align(Alignment.TopEnd).offset(x = 7.dp, y = (-5).dp)) {
+                    drawCircle(color = Color(0xFFFF3B30).copy(alpha = recordingPulse), radius = size.minDimension / 2f)
+                }
+            }
+        }
         Spacer(Modifier.height(4.dp))
         Text(label, color = textColor, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
+}
+
+@Composable
+private fun animateRecordingPulse(active: Boolean, label: String): State<Float> {
+    if (!active) return remember { mutableStateOf(0f) }
+    return rememberInfiniteTransition(label = "sc-$label-rec-pulse")
+        .animateFloat(
+            initialValue = 0.35f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+            label = "sc-$label-rec-pulse-alpha"
+        )
 }
 
 @Composable

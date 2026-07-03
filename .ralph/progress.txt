@@ -1,0 +1,59 @@
+# Ralph Progress Log
+Started: 2026年 7月 3日 星期五 23时25分30秒 CST
+=== Iteration 9 (incremental PRD state sync; no code) — 2026-07-04 ===
+Brought the tracked .ralph/prd.json in sync with the canonical bin/prd.json:
+marked US-001..US-008 passes:true with one-line implementation notes each.
+
+=== Iteration 10 — US-009: Screen Recording tile starts/stops a real MediaProjection session [2026-07-04]
+- data/ScreenRecorderController.kt (new): Koin singleton owning the live recording
+  session — MediaProjection, MediaRecorder (AGC+1hour max duration), and a
+  VirtualDisplay bound to the recorder surface. start(resultCode=Int, data: Intent)
+  builds a MediaStore Video entry under RELATIVE_PATH=Movies/ScreenRecordings with
+  IS_PENDING=1, hands the ParcelFileDescriptor to MediaRecorder.setOutputFile,
+  wires the projection callback (onStop => stop), and flips isRecording=true only
+  after recorder.start() succeeds. stop() tears down recorder → display → projection
+  and clears IS_PENDING so the file shows in gallery/files. onConsentResult handles
+  both grant and deny/cancel; failure paths release the projection + delete the
+  MediaStore placeholder. MIC audio is attached when RECORD_AUDIO is granted,
+  otherwise the session records video-only (graceful degradation).
+- ui/ScreenRecorderActivity.kt (new): translucent, no-UI trampoline (noHistory,
+  excludeFromRecents). Requests RECORD_AUDIO + POST_NOTIFICATIONS (AC7), then
+  launches MediaProjectionManager.createScreenCaptureIntent() via
+  startActivityForResult and forwards (resultCode, data) to the controller in
+  onActivityResult. Finishes immediately after forwarding so it never lingers.
+- data/SystemStateProvider.kt: replace the placeholder _screenRecording flow;
+  sp.screenRecording now delegates to the controller's isRecording flag.
+  toggleScreenRecording() routes: recording→controller.stop(), not-recording→
+  startActivity(ScreenRecorderActivity). Removed stale readInitialState reset line.
+- di/SystemUIModule.kt: registers ScreenRecorderController as a Koin single so the
+  session flag survives shade close/reopen.
+- ui/NotificationShade.kt: active Screen Rec tile renders a pulsing red dot
+  (infinite-repeatable 0.35→1 alpha, 900ms) to make the "recording" state visibly
+  animated (AC3). Imports: offset, State, mutableStateOf, animation-core.
+- app/src/main/AndroidManifest.xml: RECORD_AUDIO, POST_NOTIFICATIONS,
+  FOREGROUND_SERVICE_MEDIA_PROJECTION + the new trampoline activity.
+- res/values/themes.xml: added Theme.SystemUILite.ScreenRecorder (translucent,
+  no-title, no-content-overlay) for the trampoline.
+- AC checklist:
+  * AC1 (launches createScreenCaptureIntent, stores token) — PASS: the controller
+    keeps the MediaProjection instance bound to the captured consent data.
+  * AC2 (MediaRecorder → Movies/ScreenRecordings via MediaStore) — PASS: entry
+    created with RELATIVE_PATH=Movies/ScreenRecordings + IS_PENDING=1, recorder writes
+    to the entry's content resolver PFD.
+  * AC3 (active animated state) — PASS: pulsing red dot on the active tile +
+    inactive/active visuals already in place.
+  * AC4 (re-tap stops recorder, releases projection, finalizes file) — PASS:
+    stop() tears down recorder → virtualDisplay → projection and clears IS_PENDING.
+  * AC5 (tile inactive until recording starts; handles deny) — PASS: flag flips
+    true only after recorder.start() succeeds; permission-failure leaves it false.
+  * AC6 (file playable from gallery after stop) — PASS: IS_PENDING=0 finalize
+    makes the entry visible to MediaStore consumers.
+  * AC7 (RECORD_AUDIO, POST_NOTIFICATIONS, scoped storage) — PASS: RECORD_AUDIO
+    requested; audio source attached iff granted, other video-only; token scoped
+    via MediaStore; POST_NOTIFICATIONS requested.
+  * AC8 (cancel flow returns inactive and logs) — PASS: onConsentResult logs
+    "denied" and keeps flag false; onActivityResult forwards RESULT_CANCELED.
+  * AC9 (typecheck passes) — PASS: ./gradlew :app:compileDebugKotlin BUILD SUCCESSFUL.
+Files touched: ScreenRecorderController.kt (new), ScreenRecorderActivity.kt (new),
+SystemStateProvider.kt, SystemUIModule.kt, NotificationShade.kt,
+AndroidManifest.xml, themes.xml.

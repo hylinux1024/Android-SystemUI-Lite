@@ -91,8 +91,11 @@ class SystemStateProvider(
     private val _batterySaverEnabled = MutableStateFlow(false)
     val batterySaverEnabled: StateFlow<Boolean> = _batterySaverEnabled.asStateFlow()
 
-    private val _screenRecording = MutableStateFlow(false)
-    val screenRecording: StateFlow<Boolean> = _screenRecording.asStateFlow()
+    // Screen recording state is owned by ScreenRecorderController (Koin singleton) — it
+    // tracks the live MediaProjection session. We only read it here so tile consumers can
+    // observe the flag the same way they observe every other tile's state (US-009).
+    private val screenRecorder get() = org.koin.core.context.GlobalContext.get().get<ScreenRecorderController>()
+    val screenRecording: StateFlow<Boolean> get() = screenRecorder.isRecording
 
     // Brightness (0-255)
     private val _brightness = MutableStateFlow(128)
@@ -262,7 +265,6 @@ class SystemStateProvider(
         _airplaneModeEnabled.value = isAirplaneModeEnabled()
         _autoRotateEnabled.value = isAutoRotateEnabled()
         _batterySaverEnabled.value = isBatterySaverEnabled()
-        _screenRecording.value = false
         _brightness.value = getCurrentBrightness()
         // torch state has no queryable source — do NOT reset _flashlightEnabled here;
         // the TorchCallback registered after readInitialState pushes the real state and
@@ -737,10 +739,26 @@ class SystemStateProvider(
 
     // ========== Screen Recording ==========
 
+    /**
+     * Toggle the live screen recording. If a session is already running we stop it
+     * immediately; otherwise we bounce through the no-UI consent trampoline activity
+     * so the user can grant the system "start capture" dialog (US-009 AC1). The running
+     * state then flows back to the tile through [screenRecording].
+     */
     fun toggleScreenRecording() {
-        // US-009 wires a real MediaProjection flow into this entry point.
-        _screenRecording.value = !_screenRecording.value
-        Log.d(TAG, "Screen recording requested, active=${_screenRecording.value}")
+        if (screenRecorder.isCurrentlyRecording()) {
+            screenRecorder.stop()
+            Log.d(TAG, "Screen recording stop requested")
+        } else {
+            val consent = Intent(context, com.android.systemui.lite.ui.ScreenRecorderActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                context.startActivity(consent)
+                Log.d(TAG, "Launched ScreenRecorderActivity for consent")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to launch ScreenRecorderActivity: ${e.message}", e)
+            }
+        }
     }
 
     // ========== Brightness ==========

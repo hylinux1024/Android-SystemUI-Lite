@@ -1,0 +1,173 @@
+{
+  "project": "SystemUI-Lite2",
+  "branchName": "ralph/qs-tiles",
+  "description": "Quick Settings Tile Functionality — Make every QS tile toggle a real system state, suppress notifications for DND, record the screen, fix Bluetooth sync, and consolidate duplicate state ownership",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Consolidate tile state ownership between QSTileManager and SystemStateProvider",
+      "description": "As a developer, I want a single clear owner of QS tile state and toggles so that tile behavior is easy to extend and there is only one place to look.",
+      "acceptanceCriteria": [
+        "One of QSTileManager.kt or SystemStateProvider.kt becomes the canonical QS state + actions class and the other has its QS-relevant code removed",
+        "The remaining class is registered in the Koin module (SystemUIModule) as the single QSTileManager-type dependency",
+        "All 7 tiles wire through the single class — no tile references both",
+        "The NotificationShade composable sends tile taps to the consolidated class",
+        "Class name and package clearly express its role with a 3-line comment at top of file documenting the responsibility split",
+        "No duplicate BroadcastReceiver logic; one receiver handles all state-change intents",
+        "Typecheck passes",
+        "App builds and all existing non-QS features (status bar, notification shade, navigation bar, wallpaper) still work after refactor"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "US-001 completed in Iteration 1 — qubitation: QSTileManager (qs/) is canonical QS state+actions class; SystemStateProvider (data/) reduced to ambient status-bar state; registered in Koin."
+    },
+    {
+      "id": "US-002",
+      "title": "Wi-Fi tile actually turns Wi-Fi on/off",
+      "description": "As a user, I want to tap the Wi-Fi tile and have Wi-Fi actually toggle on or off, so that I can use the shade to manage connectivity instead of going into Settings.",
+      "acceptanceCriteria": [
+        "Tapping Wi-Fi tile calls WifiManager.setWifiEnabled(true/false) and the tile's visual active/inactive state reflects the result",
+        "Tile state updates when the system broadcasts WifiManager.WIFI_STATE_CHANGED_ACTION",
+        "On Android 10+ where WifiManager.setWifiEnabled is restricted, tile falls back to opening Settings.Panel.ACTION_WIFI rather than silently failing",
+        "No duplicate Wi-Fi state logic between QSTileManager and SystemStateProvider after refactor",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "US-002 completed in Iteration 2 — SystemStateProvider.toggleWifi calls WifiManager.setWifiEnabled on pre-Q; falls back to Settings.Panel.ACTION_WIFI on Q+; WIFI_STATE_CHANGED uses EXTRA_WIFI_STATE; QSTileManager is a Koin single."
+    },
+    {
+      "id": "US-003",
+      "title": "Airplane Mode tile toggles airplane mode",
+      "description": "As a user, I want to tap the Airplane Mode tile and have airplane mode actually turn on/off, with the tile reflecting the current state.",
+      "acceptanceCriteria": [
+        "Tapping Airplane Mode tile writes to Settings.Global.AIRPLANE_MODE_ON and broadcasts Intent.ACTION_AIRPLANE_MODE_CHANGED",
+        "Tile active/inactive state updates from broadcast receiver",
+        "Tile state matches Settings.Global.AIRPLANE_MODE_ON on every shade open",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "US-003 completed in Iteration 3 — toggleAirplaneMode writes Settings.Global.AIRPLANE_MODE_ON and broadcasts ACTION_AIRPLANE_MODE_CHANGED; receiver syncs tile live."
+    },
+    {
+      "id": "US-004",
+      "title": "Auto-Rotate tile toggles rotation lock",
+      "description": "As a user, I want to tap the Auto-Rotate tile to lock/unlock screen rotation, and have the tile show the actual state.",
+      "acceptanceCriteria": [
+        "Tapping Auto-Rotate tile writes to Settings.System.ACCELEROMETER_ROTATION",
+        "Tile visual state matches Settings.System.ACCELEROMETER_ROTATION (0 = locked = inactive, 1 = auto-rotate = active)",
+        "Actual device rotation behavior changes after toggling",
+        "Tile state updates via ContentObserver on Settings.System.ACCELEROMETER_ROTATION to detect external changes",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "US-004 completed in Iteration 3 — autoRotateObserver (ContentObserver) on ACCELEROMETER_ROTATION; refreshTileState re-reads on every shade open."
+    },
+    {
+      "id": "US-005",
+      "title": "Bluetooth tile stays in sync with adapter state",
+      "description": "As a user, I want the Bluetooth tile to show the real adapter state at all times and toggle Bluetooth on/off without the tile showing the wrong state afterward.",
+      "acceptanceCriteria": [
+        "Tapping Bluetooth tile calls BluetoothAdapter.enable() or BluetoothAdapter.disable()",
+        "Tile state updates on BluetoothAdapter.ACTION_STATE_CHANGED, correctly reflecting STATE_TURNING_ON, STATE_ON, STATE_TURNING_OFF, STATE_OFF",
+        "While transition is in flight (STATE_TURNING_ON / STATE_TURNING_OFF), tile shows a distinct in-progress visual and ignores rapid taps",
+        "Tile state matches BluetoothAdapter.getDefaultAdapter().isEnabled on every onResume/shade-open",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "US-005 completed in Iteration (qsm-mgr) — Bluetooth tile syncs via EXTRA_STATE-driven ACTION_STATE_CHANGED; QSTile renders themeColor-tinted in-progress visual; taps guarded during transition."
+    },
+    {
+      "id": "US-006",
+      "title": "Flashlight tile toggles camera torch",
+      "description": "As a user, I want to tap the Flashlight tile and have the camera torch turn on/off, so I can use my phone as a flashlight directly from the shade.",
+      "acceptanceCriteria": [
+        "Tapping Flashlight tile calls CameraManager.setTorchMode() for the first available camera",
+        "Tile visually reflects on/off state",
+        "Torch state is read on initial start and polled periodically while shade is open if no broadcast is available",
+        "If no torch-capable camera exists, tile is disabled/greyed instead of crashing",
+        "Flashlight state survives brief shade close/reopen (persisted across shade lifecycle)",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "US-006 completed in Iteration 6 — CameraManager.TorchCallback drives live sync; null torch state => _flashlightAvailable=false disables tile; Koin singleton scope persists across shade close/reopen."
+    },
+    {
+      "id": "US-007",
+      "title": "DND tile suppresses notifications end-to-end",
+      "description": "As a user, I want to enable DND from the Quick Settings tile and have the system actually suppress notification sounds, vibrations, and visual interruptions.",
+      "acceptanceCriteria": [
+        "Tapping DND tile calls NotificationManager.setInterruptionFilter(INTERRUPTION_FILTER_NONE or INTERRUPTION_FILTER_ALARMS/PRIORITY) and updates Settings.Global.ZEN_MODE",
+        "When DND is ON, SystemNotificationListenerService respects the interruption filter and does not alert new notifications visibly",
+        "Tapping again disables DND: setInterruptionFilter(INTERRUPTION_FILTER_ALL), ZEN_MODE = OFF",
+        "Tile state updates on android.settings.ZEN_MODE_CHANGED",
+        "NotificationManager.getNotificationPolicy() reflects DND state",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "US-007 completed in Iteration 7 — toggleDnd drives 4-phase OFF→PRIORITY→ALARMS→NONE→OFF cycle via setInterruptionFilter; NotificationListenerService suppresses visible alerts when DND on."
+    },
+    {
+      "id": "US-008",
+      "title": "Battery Saver tile reflects state and opens settings",
+      "description": "As a user, I want the Battery Saver tile to reflect power-save mode accurately and tapping it opens battery settings so I can manage the feature.",
+      "acceptanceCriteria": [
+        "Tile reads current state via PowerManager.isPowerSaveMode and visually reflects it",
+        "Tapping the tile opens Intent.ACTION_POWER_SUMMARY (battery settings) — correct fallback when direct toggle is unavailable",
+        "If platform signature + WRITE_SECURE_SETTINGS allows, tile calls PowerManager.setPowerSaveMode() and falls back to settings intent if denied",
+        "Tile is never a silent no-op — tapping always produces observable change",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "US-008 completed in Iteration 8 — toggleBatterySaver reflects PowerManager.isPowerSaveMode and opens ACTION_BATTERY_SAVER_SETTINGS; material-icons-extended dep added; grid rebalanced to 2x4."
+    },
+    {
+      "id": "US-009",
+      "title": "Screen Recording tile starts/stops a real MediaProjection session",
+      "description": "As a user, I want to tap the Screen Recording tile and have the phone start recording the screen and stop when I tap again, with the recording saved to storage.",
+      "acceptanceCriteria": [
+        "Tapping Screen Recording tile launches MediaProjectionManager.createScreenCaptureIntent() and stores the resulting MediaProjection token after consent",
+        "After user grants consent, tile starts a MediaRecorder writing to Movies/ScreenRecordings/ via MediaStore",
+        "Tile visually reflects recording state (active/animated)",
+        "Tapping again stops the recorder, releases MediaProjection, and finalizes the file",
+        "Tile is disabled/inactive until recording successfully starts (handles deny from permission dialog)",
+        "File is playable from the gallery/files app after recording stops",
+        "Handles runtime permissions for RECORD_AUDIO, POST_NOTIFICATIONS, and scoped storage",
+        "If permission flow is cancelled, tile returns to inactive and logs the event",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "ScreenRecorderController (Koin singleton in data/) owns MediaProjection/MediaRecorder/VirtualDisplay; ScreenRecorderActivity (ui/) is a translucent no-UI trampoline that drives the consent dialog and forwards the resultCode+data token. toggleScreenRecording routes: active→controller.stop(), inactive→launch consent activity. sp.screenRecording delegates to the controller's isRecording flag; tile renders a pulsing red dot when recording. Includes one-hour auto-stop and IS_PENDING finalize. Typecheck passes."
+    },
+    {
+      "id": "US-010",
+      "title": "Each tile shows a correct, meaningful icon",
+      "description": "As a user, I want each QS tile to display a recognizable icon so I can scan the grid quickly.",
+      "acceptanceCriteria": [
+        "Wi-Fi tile shows a Wi-Fi signal icon",
+        "Bluetooth tile shows a bluetooth icon",
+        "DND tile shows a do-not-disturb / bell-slash icon",
+        "Flashlight tile shows a flashlight/torch icon",
+        "Airplane Mode tile shows an airplane icon",
+        "Auto-Rotate tile shows a phone-with-rotation-arrows icon",
+        "Battery Saver tile shows a battery-with-leaf icon",
+        "Screen Recording tile shows a record/filled-circle icon",
+        "Icons come from Material Icons or from ~/android-os/SystemUI/res/drawable/ vector assets (AOSP-licensed)",
+        "Icons render correctly in both active and inactive tile states with contrast",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

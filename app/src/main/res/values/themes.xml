@@ -2,4 +2,14 @@
 <resources>
 
     <style name="Theme.SystemUILite" parent="android:Theme.DeviceDefault.NoActionBar" />
+
+    <!-- Truly invisible trampoline: the screen-recording consent activity draws nothing of
+         its own, so it must be fully transparent and excluded from the user's task stack. -->
+    <style name="Theme.SystemUILite.ScreenRecorder" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
 </resources>
