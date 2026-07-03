@@ -35,9 +35,6 @@ class StatusBarCoreStartable(
     private val sp by lazy {
         GlobalContext.get().get<com.android.systemui.lite.data.SystemStateProvider>()
     }
-    private val qsm by lazy {
-        GlobalContext.get().get<com.android.systemui.lite.qs.QSTileManager>()
-    }
 
     data class CutoutInfo(
         val safeInsetLeft: Int = 0,
@@ -130,10 +127,10 @@ class StatusBarCoreStartable(
                     val timeString by sp.timeString.collectAsState()
                     val cutout by _cutoutInfo.collectAsState()
                     val shadeProgress by shadeController.shadeProgress.collectAsState()
-                    val wifiOn by qsm.wifiEnabled.collectAsState()
-                    val bluetoothOn by qsm.bluetoothEnabled.collectAsState()
-                    val dndOn by qsm.dndEnabled.collectAsState()
-                    val airplaneOn by qsm.airplaneModeEnabled.collectAsState()
+                    val wifiOn by sp.wifiEnabled.collectAsState()
+                    val bluetoothOn by sp.bluetoothEnabled.collectAsState()
+                    val dndOn by sp.dndEnabled.collectAsState()
+                    val airplaneOn by sp.airplaneModeEnabled.collectAsState()
 
                     StatusBar(
                         heightDp = 28,

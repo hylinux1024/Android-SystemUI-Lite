@@ -14,7 +14,7 @@ import org.koin.dsl.module
 val appModule = module {
     single { PluginManager() }
     single { NotificationProvider() }
-    single { SystemStateProvider(androidContext()) }
+    single<SystemStateProvider> { SystemStateProvider(androidContext()) }
     single { WallpaperProvider(androidContext()) }
     single { QSTileManager(androidContext()) }
 }

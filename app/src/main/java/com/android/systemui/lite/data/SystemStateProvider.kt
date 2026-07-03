@@ -4,12 +4,17 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.camera2.CameraManager
+import android.media.AudioManager
+import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import android.bluetooth.BluetoothAdapter
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,10 +22,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Ambient, non-Quick-Settings system state for the status bar and wallpaper.
+ * Single source of truth for SystemUI-Lite state and the only entry point for QS tile toggles.
  *
- * Owns the battery level, clock time string, and location state. QS tile
- * state and actions live in com.android.systemui.lite.qs.QSTileManager.
+ * Owns ambient state (battery, clock, location) used by the status bar and the full set of
+ * Quick Settings tiles (Wi-Fi, Bluetooth, DND, Flashlight, Airplane, Auto-Rotate, Screen
+ * Recording, brightness, volume). Status bar and notification shade both read StateFlows and
+ * dispatch taps through this class — QSTileManager has been folded into it.
  */
 class SystemStateProvider(
     private val context: Context
@@ -35,7 +42,8 @@ class SystemStateProvider(
         val isCharging: Boolean = false
     )
 
-    // --- StateFlows ---
+    // --- Ambient state (status bar) ---
+
     private val _battery = MutableStateFlow(BatteryState())
     val battery: StateFlow<BatteryState> = _battery.asStateFlow()
 
@@ -45,25 +53,98 @@ class SystemStateProvider(
     private val _locationEnabled = MutableStateFlow(false)
     val locationEnabled: StateFlow<Boolean> = _locationEnabled.asStateFlow()
 
-    // Internal state
+    // --- Quick Settings tile state ---
+
+    private val _wifiEnabled = MutableStateFlow(false)
+    val wifiEnabled: StateFlow<Boolean> = _wifiEnabled.asStateFlow()
+
+    private val _bluetoothEnabled = MutableStateFlow(false)
+    val bluetoothEnabled: StateFlow<Boolean> = _bluetoothEnabled.asStateFlow()
+
+    private val _dndEnabled = MutableStateFlow(false)
+    val dndEnabled: StateFlow<Boolean> = _dndEnabled.asStateFlow()
+
+    private val _flashlightEnabled = MutableStateFlow(false)
+    val flashlightEnabled: StateFlow<Boolean> = _flashlightEnabled.asStateFlow()
+
+    private val _airplaneModeEnabled = MutableStateFlow(false)
+    val airplaneModeEnabled: StateFlow<Boolean> = _airplaneModeEnabled.asStateFlow()
+
+    private val _autoRotateEnabled = MutableStateFlow(false)
+    val autoRotateEnabled: StateFlow<Boolean> = _autoRotateEnabled.asStateFlow()
+
+    private val _batterySaverEnabled = MutableStateFlow(false)
+    val batterySaverEnabled: StateFlow<Boolean> = _batterySaverEnabled.asStateFlow()
+
+    private val _screenRecording = MutableStateFlow(false)
+    val screenRecording: StateFlow<Boolean> = _screenRecording.asStateFlow()
+
+    // Brightness (0-255)
+    private val _brightness = MutableStateFlow(128)
+    val brightness: StateFlow<Int> = _brightness.asStateFlow()
+
+    // Volume levels
+    private val _mediaVolume = MutableStateFlow(50)
+    val mediaVolume: StateFlow<Int> = _mediaVolume.asStateFlow()
+
+    private val _ringVolume = MutableStateFlow(50)
+    val ringVolume: StateFlow<Int> = _ringVolume.asStateFlow()
+
+    private val _alarmVolume = MutableStateFlow(50)
+    val alarmVolume: StateFlow<Int> = _alarmVolume.asStateFlow()
+
+    // System services
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
     private var receiverRegistered = false
 
-    // --- Battery BroadcastReceiver ---
-    private val batteryReceiver = object : BroadcastReceiver() {
+    // --- Unified BroadcastReceiver (battery + all QS tile intents) ---
+
+    private val systemReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != Intent.ACTION_BATTERY_CHANGED) return
-            val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0)
-            val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
-            val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
-            val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                    status == BatteryManager.BATTERY_STATUS_FULL
-            val percentage = (level * 100) / scale
-            _battery.value = BatteryState(level = percentage, isCharging = charging)
+            when (intent.action) {
+                Intent.ACTION_BATTERY_CHANGED -> {
+                    val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0)
+                    val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+                    val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                    val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                            status == BatteryManager.BATTERY_STATUS_FULL
+                    val percentage = (level * 100) / scale
+                    _battery.value = BatteryState(level = percentage, isCharging = charging)
+                }
+
+                WifiManager.WIFI_STATE_CHANGED_ACTION -> {
+                    // EXTRA_WIFI_STATE is authoritative for the broadcast; fall back to
+                    // querying the manager if the extra is absent for any reason.
+                    val extraState = intent.getIntExtra(
+                        WifiManager.EXTRA_WIFI_STATE,
+                        WifiManager.WIFI_STATE_UNKNOWN
+                    )
+                    _wifiEnabled.value = when (extraState) {
+                        WifiManager.WIFI_STATE_ENABLED -> true
+                        WifiManager.WIFI_STATE_DISABLED -> false
+                        else -> isWifiEnabled()
+                    }
+                }
+
+                BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                    _bluetoothEnabled.value = isBluetoothEnabled()
+                }
+
+                Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
+                    _airplaneModeEnabled.value = isAirplaneModeEnabled()
+                }
+
+                "android.settings.ZEN_MODE_CHANGED" -> {
+                    _dndEnabled.value = isDndEnabled()
+                }
+            }
         }
     }
 
     // --- Time ticker ---
+
     private val timeRunnable = object : Runnable {
         override fun run() {
             _timeString.value = LocalTime.now().format(timeFormatter)
@@ -76,7 +157,7 @@ class SystemStateProvider(
         readInitialState()
         registerReceiver()
         mainHandler.post(timeRunnable)
-        Log.d(TAG, "SystemStateProvider started (battery=${_battery.value.level}%)")
+        Log.d(TAG, "SystemStateProvider started (battery=${_battery.value.level}%, wifi=${_wifiEnabled.value})")
     }
 
     fun stop() {
@@ -86,6 +167,7 @@ class SystemStateProvider(
     }
 
     // --- Initial state ---
+
     private fun readInitialState() {
         // Battery
         val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -100,32 +182,285 @@ class SystemStateProvider(
             )
         }
 
+        // QS tile state
+        _wifiEnabled.value = isWifiEnabled()
+        _bluetoothEnabled.value = isBluetoothEnabled()
+        _dndEnabled.value = isDndEnabled()
+        _airplaneModeEnabled.value = isAirplaneModeEnabled()
+        _autoRotateEnabled.value = isAutoRotateEnabled()
+        _batterySaverEnabled.value = isBatterySaverEnabled()
+        _screenRecording.value = false
+        _brightness.value = getCurrentBrightness()
+        _flashlightEnabled.value = false
+
+        // Volume
+        audioManager?.let { am ->
+            val maxMusic = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val curMusic = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            _mediaVolume.value = if (maxMusic > 0) (curMusic * 100) / maxMusic else 0
+
+            val maxRing = am.getStreamMaxVolume(AudioManager.STREAM_RING)
+            val curRing = am.getStreamVolume(AudioManager.STREAM_RING)
+            _ringVolume.value = if (maxRing > 0) (curRing * 100) / maxRing else 0
+
+            val maxAlarm = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+            val curAlarm = am.getStreamVolume(AudioManager.STREAM_ALARM)
+            _alarmVolume.value = if (maxAlarm > 0) (curAlarm * 100) / maxAlarm else 0
+        }
+
         // Location
         _locationEnabled.value = isLocationEnabled()
 
         // Time
         _timeString.value = LocalTime.now().format(timeFormatter)
+
+        Log.d(TAG, "Initial state: wifi=${_wifiEnabled.value}, bt=${_bluetoothEnabled.value}, dnd=${_dndEnabled.value}")
     }
 
     // --- Receiver management ---
+
     private fun registerReceiver() {
         if (receiverRegistered) return
-        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            addAction("android.settings.ZEN_MODE_CHANGED")
+        }
         if (Build.VERSION.SDK_INT >= 34) {
-            context.registerReceiver(batteryReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            context.registerReceiver(systemReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
-            context.registerReceiver(batteryReceiver, filter)
+            context.registerReceiver(systemReceiver, filter)
         }
         receiverRegistered = true
     }
 
     private fun unregisterReceiver() {
         if (!receiverRegistered) return
-        try { context.unregisterReceiver(batteryReceiver) } catch (_: Exception) {}
+        try { context.unregisterReceiver(systemReceiver) } catch (_: Exception) {}
         receiverRegistered = false
     }
 
-    // --- Private helpers ---
+    // ========== WiFi ==========
+
+    private fun isWifiEnabled(): Boolean = try {
+        val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        wifiManager?.isWifiEnabled == true
+    } catch (e: Exception) { false }
+
+    fun toggleWifi() {
+        val currentlyOn = _wifiEnabled.value
+        val newState = !currentlyOn
+        try {
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            if (wifiManager != null) {
+                // setWifiEnabled is deprecated in API 29 and returns false for non-system
+                // apps on Q+. Accept the call on older builds; on Q+ always bounce through
+                // the Wi-Fi settings panel so the user still gets observable behaviour.
+                @Suppress("DEPRECATION")
+                val accepted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    false
+                } else {
+                    wifiManager.setWifiEnabled(newState)
+                }
+                if (accepted) {
+                    Log.d(TAG, "WiFi setWifiEnabled($newState) accepted")
+                } else {
+                    Log.w(TAG, "WiFi setWifiEnabled rejected or pre-Q; opening Wi-Fi settings panel")
+                    openWifiPanel()
+                }
+            } else {
+                Log.e(TAG, "WifiManager not available; opening Wi-Fi settings panel")
+                openWifiPanel()
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Permission denied for setWifiEnabled; opening Wi-Fi settings panel", e)
+            openWifiPanel()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle WiFi: ${e.message}", e)
+        }
+    }
+
+    private fun openWifiPanel() {
+        try {
+            val intent = Intent(Settings.Panel.ACTION_WIFI).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open Wi-Fi panel: ${e.message}", e)
+        }
+    }
+
+    // ========== Bluetooth ==========
+
+    private fun isBluetoothEnabled(): Boolean = try {
+        BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
+    } catch (e: Exception) { false }
+
+    fun toggleBluetooth() {
+        val newState = !_bluetoothEnabled.value
+        try {
+            val adapter = BluetoothAdapter.getDefaultAdapter() ?: return
+            if (newState) adapter.enable() else adapter.disable()
+            _bluetoothEnabled.value = newState
+            Log.d(TAG, "Bluetooth toggled to $newState")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle Bluetooth: ${e.message}", e)
+        }
+    }
+
+    // ========== DND ==========
+
+    private fun isDndEnabled(): Boolean = try {
+        Settings.Global.getInt(context.contentResolver, "zen_mode", 0) != 0
+    } catch (e: Exception) { false }
+
+    fun toggleDnd() {
+        val newState = !_dndEnabled.value
+        try {
+            val zenMode = if (newState) 1 else 0
+            Settings.Global.putInt(context.contentResolver, "zen_mode", zenMode)
+            _dndEnabled.value = newState
+            Log.d(TAG, "DND toggled to $newState")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle DND: ${e.message}", e)
+        }
+    }
+
+    // ========== Flashlight ==========
+
+    fun toggleFlashlight() {
+        val newState = !_flashlightEnabled.value
+        try {
+            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
+            cameraManager?.let { cm ->
+                val cameraId = cm.cameraIdList?.firstOrNull()
+                if (cameraId != null) {
+                    cm.setTorchMode(cameraId, newState)
+                    _flashlightEnabled.value = newState
+                    Log.d(TAG, "Flashlight toggled to $newState")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle flashlight: ${e.message}", e)
+        }
+    }
+
+    // ========== Airplane Mode ==========
+
+    private fun isAirplaneModeEnabled(): Boolean = try {
+        Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+    } catch (e: Exception) { false }
+
+    fun toggleAirplaneMode() {
+        val newState = !_airplaneModeEnabled.value
+        try {
+            Settings.Global.putInt(
+                context.contentResolver,
+                Settings.Global.AIRPLANE_MODE_ON,
+                if (newState) 1 else 0
+            )
+            _airplaneModeEnabled.value = newState
+            val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            intent.putExtra("state", newState)
+            context.sendBroadcast(intent)
+            Log.d(TAG, "Airplane mode toggled to $newState")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle airplane mode: ${e.message}", e)
+        }
+    }
+
+    // ========== Auto-Rotate ==========
+
+    private fun isAutoRotateEnabled(): Boolean = try {
+        Settings.System.getInt(context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) != 0
+    } catch (e: Exception) { false }
+
+    fun toggleAutoRotate() {
+        val newState = !_autoRotateEnabled.value
+        try {
+            Settings.System.putInt(
+                context.contentResolver,
+                Settings.System.ACCELEROMETER_ROTATION,
+                if (newState) 1 else 0
+            )
+            _autoRotateEnabled.value = newState
+            Log.d(TAG, "Auto-rotate toggled to $newState")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to toggle auto-rotate: ${e.message}", e)
+        }
+    }
+
+    // ========== Battery Saver ==========
+
+    private fun isBatterySaverEnabled(): Boolean = try {
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        powerManager?.isPowerSaveMode == true
+    } catch (e: Exception) { false }
+
+    fun toggleBatterySaver() {
+        // Direct API toggle is platform-gated; callers fall back to settings intent.
+        Log.d(TAG, "Battery saver toggle requested (system-controlled)")
+        _batterySaverEnabled.value = isBatterySaverEnabled()
+    }
+
+    // ========== Screen Recording ==========
+
+    fun toggleScreenRecording() {
+        // US-009 wires a real MediaProjection flow into this entry point.
+        _screenRecording.value = !_screenRecording.value
+        Log.d(TAG, "Screen recording requested, active=${_screenRecording.value}")
+    }
+
+    // ========== Brightness ==========
+
+    private fun getCurrentBrightness(): Int = try {
+        Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+    } catch (e: Exception) { 128 }
+
+    fun setBrightness(value: Int) {
+        val clamped = value.coerceIn(0, 255)
+        try {
+            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, clamped)
+            _brightness.value = clamped
+            Log.d(TAG, "Brightness set to $clamped")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set brightness: ${e.message}", e)
+        }
+    }
+
+    // ========== Volume ==========
+
+    fun setMediaVolume(percent: Int) {
+        audioManager?.let { am ->
+            val maxVolume = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val targetVolume = (percent * maxVolume) / 100
+            am.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
+            _mediaVolume.value = percent
+        }
+    }
+
+    fun setRingVolume(percent: Int) {
+        audioManager?.let { am ->
+            val maxVolume = am.getStreamMaxVolume(AudioManager.STREAM_RING)
+            val targetVolume = (percent * maxVolume) / 100
+            am.setStreamVolume(AudioManager.STREAM_RING, targetVolume, 0)
+            _ringVolume.value = percent
+        }
+    }
+
+    fun setAlarmVolume(percent: Int) {
+        audioManager?.let { am ->
+            val maxVolume = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+            val targetVolume = (percent * maxVolume) / 100
+            am.setStreamVolume(AudioManager.STREAM_ALARM, targetVolume, 0)
+            _alarmVolume.value = percent
+        }
+    }
+
+    // ========== Helpers ==========
 
     private fun isLocationEnabled(): Boolean = try {
         val mode = Settings.Secure.getInt(context.contentResolver, Settings.Secure.LOCATION_MODE)
