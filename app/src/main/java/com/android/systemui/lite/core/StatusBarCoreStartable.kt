@@ -35,6 +35,9 @@ class StatusBarCoreStartable(
     private val sp by lazy {
         GlobalContext.get().get<com.android.systemui.lite.data.SystemStateProvider>()
     }
+    private val qsm by lazy {
+        GlobalContext.get().get<com.android.systemui.lite.qs.QSTileManager>()
+    }
 
     data class CutoutInfo(
         val safeInsetLeft: Int = 0,
@@ -124,10 +127,13 @@ class StatusBarCoreStartable(
             setContent {
                 MaterialTheme {
                     val battery by sp.battery.collectAsState()
-                    val connectivity by sp.connectivity.collectAsState()
                     val timeString by sp.timeString.collectAsState()
                     val cutout by _cutoutInfo.collectAsState()
                     val shadeProgress by shadeController.shadeProgress.collectAsState()
+                    val wifiOn by qsm.wifiEnabled.collectAsState()
+                    val bluetoothOn by qsm.bluetoothEnabled.collectAsState()
+                    val dndOn by qsm.dndEnabled.collectAsState()
+                    val airplaneOn by qsm.airplaneModeEnabled.collectAsState()
 
                     StatusBar(
                         heightDp = 28,
@@ -136,10 +142,10 @@ class StatusBarCoreStartable(
                         batteryStyle = com.android.systemui.lite.model.BatteryPercentageStyle.ICON_AND_TEXT,
                         batteryLevel = battery.level,
                         isCharging = battery.isCharging,
-                        isWifiOn = connectivity.wifiEnabled,
-                        isBluetoothOn = connectivity.bluetoothEnabled,
-                        isDoNotDisturb = connectivity.dndEnabled,
-                        isAirplaneMode = connectivity.airplaneMode,
+                        isWifiOn = wifiOn,
+                        isBluetoothOn = bluetoothOn,
+                        isDoNotDisturb = dndOn,
+                        isAirplaneMode = airplaneOn,
                         timeString = timeString,
                         isTrafficActive = false,
                         themeColor = androidx.compose.ui.graphics.Color(0xFF00ADB5),

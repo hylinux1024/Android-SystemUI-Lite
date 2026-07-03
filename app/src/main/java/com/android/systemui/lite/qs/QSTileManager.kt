@@ -1,38 +1,33 @@
 package com.android.systemui.lite.qs
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.net.wifi.WifiManager
-import android.os.Handler
-import android.os.Looper
+import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
-import com.android.systemui.lite.SystemUIApplication
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import android.bluetooth.BluetoothAdapter
 
 /**
- * QSTileManager - Manages Quick Settings tiles with real system state.
+ * Single owner of Quick Settings tile state and toggle actions.
  *
- * In AOSP, each QS tile is a separate class (e.g., WifiTile, BluetoothTile)
- * that extends QSTileImpl and implements handleUpdateState(), handleSetState(), etc.
- *
- * This is a simplified version that:
- * 1. Reads real system state for each tile
- * 2. Handles toggle actions via system APIs
- * 3. Notifies the UI layer of state changes
+ * Every QS tile reads its active/inactive state and dispatches taps through
+ * this class. SystemStateProvider owns ambient, non-QS state (battery level,
+ * clock, location); this class owns the connectivity/torch/rotation tiles.
  */
 class QSTileManager(private val context: Context) {
 
     companion object {
         private const val TAG = "QSTileManager"
     }
-
-    private val mainHandler = Handler(Looper.getMainLooper())
 
     // Tile states
     private val _wifiEnabled = MutableStateFlow(false)
@@ -56,8 +51,8 @@ class QSTileManager(private val context: Context) {
     private val _batterySaverEnabled = MutableStateFlow(false)
     val batterySaverEnabled: StateFlow<Boolean> = _batterySaverEnabled.asStateFlow()
 
-    private val _locationEnabled = MutableStateFlow(false)
-    val locationEnabled: StateFlow<Boolean> = _locationEnabled.asStateFlow()
+    private val _screenRecording = MutableStateFlow(false)
+    val screenRecording: StateFlow<Boolean> = _screenRecording.asStateFlow()
 
     // Brightness (0-255)
     private val _brightness = MutableStateFlow(128)
@@ -76,58 +71,28 @@ class QSTileManager(private val context: Context) {
     // System services
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
-    /**
-     * Start monitoring QS tile state.
-     */
     fun start() {
         Log.d(TAG, "Starting QSTileManager...")
-
-        // Read initial states
         readInitialState()
-
-        // Register for state change broadcasts
-        registerReceivers()
-
+        registerReceiver()
         Log.d(TAG, "QSTileManager started")
     }
 
-    /**
-     * Stop monitoring QS tile state.
-     */
     fun stop() {
         Log.d(TAG, "Stopping QSTileManager...")
-        unregisterReceivers()
+        unregisterReceiver()
     }
 
-    /**
-     * Read the initial state of all QS tiles.
-     */
     private fun readInitialState() {
-        // WiFi
         _wifiEnabled.value = isWifiEnabled()
-
-        // Bluetooth
         _bluetoothEnabled.value = isBluetoothEnabled()
-
-        // DND
         _dndEnabled.value = isDndEnabled()
-
-        // Airplane mode
         _airplaneModeEnabled.value = isAirplaneModeEnabled()
-
-        // Auto-rotate
         _autoRotateEnabled.value = isAutoRotateEnabled()
-
-        // Battery saver
         _batterySaverEnabled.value = isBatterySaverEnabled()
-
-        // Location
-        _locationEnabled.value = isLocationEnabled()
-
-        // Brightness
+        _screenRecording.value = false
         _brightness.value = getCurrentBrightness()
-
-        // Volume
+        _flashlightEnabled.value = false
         audioManager?.let { am ->
             val maxVolume = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             val currentVolume = am.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -141,20 +106,15 @@ class QSTileManager(private val context: Context) {
             val currentAlarm = am.getStreamVolume(AudioManager.STREAM_ALARM)
             _alarmVolume.value = if (maxAlarm > 0) (currentAlarm * 100) / maxAlarm else 0
         }
-
         Log.d(TAG, "Initial state: wifi=${_wifiEnabled.value}, bt=${_bluetoothEnabled.value}, dnd=${_dndEnabled.value}")
     }
 
     // ========== WiFi ==========
 
-    private fun isWifiEnabled(): Boolean {
-        return try {
-            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            wifiManager?.isWifiEnabled == true
-        } catch (e: Exception) {
-            false
-        }
-    }
+    private fun isWifiEnabled(): Boolean = try {
+        val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        wifiManager?.isWifiEnabled == true
+    } catch (e: Exception) { false }
 
     fun toggleWifi() {
         val newState = !_wifiEnabled.value
@@ -170,13 +130,9 @@ class QSTileManager(private val context: Context) {
 
     // ========== Bluetooth ==========
 
-    private fun isBluetoothEnabled(): Boolean {
-        return try {
-            BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
-        } catch (e: Exception) {
-            false
-        }
-    }
+    private fun isBluetoothEnabled(): Boolean = try {
+        BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
+    } catch (e: Exception) { false }
 
     fun toggleBluetooth() {
         val newState = !_bluetoothEnabled.value
@@ -192,18 +148,14 @@ class QSTileManager(private val context: Context) {
 
     // ========== DND ==========
 
-    private fun isDndEnabled(): Boolean {
-        return try {
-            Settings.Global.getInt(context.contentResolver, "zen_mode", 0) != 0
-        } catch (e: Exception) {
-            false
-        }
-    }
+    private fun isDndEnabled(): Boolean = try {
+        Settings.Global.getInt(context.contentResolver, "zen_mode", 0) != 0
+    } catch (e: Exception) { false }
 
     fun toggleDnd() {
         val newState = !_dndEnabled.value
         try {
-            val zenMode = if (newState) 1 else 0 // 1 = IMPORTANT_ONLY, 0 = OFF
+            val zenMode = if (newState) 1 else 0
             Settings.Global.putInt(context.contentResolver, "zen_mode", zenMode)
             _dndEnabled.value = newState
             Log.d(TAG, "DND toggled to $newState")
@@ -233,20 +185,15 @@ class QSTileManager(private val context: Context) {
 
     // ========== Airplane Mode ==========
 
-    private fun isAirplaneModeEnabled(): Boolean {
-        return try {
-            Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
-        } catch (e: Exception) {
-            false
-        }
-    }
+    private fun isAirplaneModeEnabled(): Boolean = try {
+        Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+    } catch (e: Exception) { false }
 
     fun toggleAirplaneMode() {
         val newState = !_airplaneModeEnabled.value
         try {
             Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, if (newState) 1 else 0)
             _airplaneModeEnabled.value = newState
-            // Broadcast the change
             val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED)
             intent.putExtra("state", newState)
             context.sendBroadcast(intent)
@@ -258,13 +205,9 @@ class QSTileManager(private val context: Context) {
 
     // ========== Auto-Rotate ==========
 
-    private fun isAutoRotateEnabled(): Boolean {
-        return try {
-            Settings.System.getInt(context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) != 0
-        } catch (e: Exception) {
-            false
-        }
-    }
+    private fun isAutoRotateEnabled(): Boolean = try {
+        Settings.System.getInt(context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) != 0
+    } catch (e: Exception) { false }
 
     fun toggleAutoRotate() {
         val newState = !_autoRotateEnabled.value
@@ -283,50 +226,35 @@ class QSTileManager(private val context: Context) {
 
     // ========== Battery Saver ==========
 
-    private fun isBatterySaverEnabled(): Boolean {
-        return try {
-            val powerManager = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
-            powerManager?.isPowerSaveMode == true
-        } catch (e: Exception) {
-            false
-        }
-    }
+    private fun isBatterySaverEnabled(): Boolean = try {
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        powerManager?.isPowerSaveMode == true
+    } catch (e: Exception) { false }
 
     fun toggleBatterySaver() {
-        // Battery saver cannot be toggled directly via API
-        // It's controlled by the system based on battery level
+        // Direct API toggle is platform-gated; callers fall back to settings intent.
         Log.d(TAG, "Battery saver toggle requested (system-controlled)")
+        _batterySaverEnabled.value = isBatterySaverEnabled()
     }
 
-    // ========== Location ==========
+    // ========== Screen Recording ==========
 
-    private fun isLocationEnabled(): Boolean {
-        return try {
-            val locationMode = Settings.Secure.getInt(context.contentResolver, Settings.Secure.LOCATION_MODE)
-            locationMode != Settings.Secure.LOCATION_MODE_OFF
-        } catch (e: Exception) {
-            false
-        }
+    fun toggleScreenRecording() {
+        // US-009 wires a real MediaProjection flow into this entry point.
+        _screenRecording.value = !_screenRecording.value
+        Log.d(TAG, "Screen recording requested, active=${_screenRecording.value}")
     }
 
     // ========== Brightness ==========
 
-    private fun getCurrentBrightness(): Int {
-        return try {
-            Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
-        } catch (e: Exception) {
-            128
-        }
-    }
+    private fun getCurrentBrightness(): Int = try {
+        Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+    } catch (e: Exception) { 128 }
 
     fun setBrightness(value: Int) {
         val clamped = value.coerceIn(0, 255)
         try {
-            Settings.System.putInt(
-                context.contentResolver,
-                Settings.System.SCREEN_BRIGHTNESS,
-                clamped
-            )
+            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, clamped)
             _brightness.value = clamped
             Log.d(TAG, "Brightness set to $clamped")
         } catch (e: Exception) {
@@ -363,15 +291,15 @@ class QSTileManager(private val context: Context) {
         }
     }
 
-    // ========== Broadcast Receivers ==========
+    // ========== Broadcast Receiver ==========
 
-    private val stateReceiver = object : android.content.BroadcastReceiver() {
+    private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 WifiManager.WIFI_STATE_CHANGED_ACTION -> {
                     _wifiEnabled.value = isWifiEnabled()
                 }
-                android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                BluetoothAdapter.ACTION_STATE_CHANGED -> {
                     _bluetoothEnabled.value = isBluetoothEnabled()
                 }
                 Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
@@ -384,25 +312,31 @@ class QSTileManager(private val context: Context) {
         }
     }
 
-    private fun registerReceivers() {
-        val filter = android.content.IntentFilter().apply {
+    private var receiverRegistered = false
+
+    private fun registerReceiver() {
+        if (receiverRegistered) return
+        val filter = IntentFilter().apply {
             addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
-            addAction(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
             addAction("android.settings.ZEN_MODE_CHANGED")
         }
-        if (android.os.Build.VERSION.SDK_INT >= 34) {
+        if (Build.VERSION.SDK_INT >= 34) {
             context.registerReceiver(stateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             context.registerReceiver(stateReceiver, filter)
         }
+        receiverRegistered = true
     }
 
-    private fun unregisterReceivers() {
+    private fun unregisterReceiver() {
+        if (!receiverRegistered) return
         try {
             context.unregisterReceiver(stateReceiver)
         } catch (e: Exception) {
-            // Already unregistered
+            // already unregistered
         }
+        receiverRegistered = false
     }
 }

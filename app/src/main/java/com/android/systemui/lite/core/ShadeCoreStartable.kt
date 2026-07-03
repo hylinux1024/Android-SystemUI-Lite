@@ -48,8 +48,8 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
 
     private val windowHost = WindowHost()
     private val scope = CoroutineScope(Dispatchers.Main)
-    private val sp by lazy {
-        GlobalContext.get().get<com.android.systemui.lite.data.SystemStateProvider>()
+    private val qsm by lazy {
+        GlobalContext.get().get<com.android.systemui.lite.qs.QSTileManager>()
     }
     private val wp by lazy {
         GlobalContext.get().get<WallpaperProvider>()
@@ -69,6 +69,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     override fun start() {
         Log.d(TAG, "Starting ShadeCoreStartable...")
         windowHost.start()
+        qsm.start()
         wp.start()
         Log.d(TAG, "ShadeCoreStartable started")
     }
@@ -81,6 +82,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
         shadeAnimJob?.cancel()
         scope.cancel()
         closeShade()
+        qsm.stop()
         wp.stop()
         windowHost.destroy()
     }
@@ -164,11 +166,15 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
 
             setContent {
                 MaterialTheme {
-                    val connectivity by sp.connectivity.collectAsState()
-                    val brightness by sp.brightness.collectAsState()
-                    val mediaVolume by sp.mediaVolume.collectAsState()
-                    val flashlightOn by sp.flashlightEnabled.collectAsState()
-                    val autoRotateOn by sp.autoRotateEnabled.collectAsState()
+                    val wifiOn by qsm.wifiEnabled.collectAsState()
+                    val bluetoothOn by qsm.bluetoothEnabled.collectAsState()
+                    val dndOn by qsm.dndEnabled.collectAsState()
+                    val airplaneOn by qsm.airplaneModeEnabled.collectAsState()
+                    val flashlightOn by qsm.flashlightEnabled.collectAsState()
+                    val autoRotateOn by qsm.autoRotateEnabled.collectAsState()
+                    val screenRecording by qsm.screenRecording.collectAsState()
+                    val brightness by qsm.brightness.collectAsState()
+                    val mediaVolume by qsm.mediaVolume.collectAsState()
                     val progress by _shadeProgress.collectAsState()
                     val wallpaperColors by wp.wallpaperColors.collectAsState()
                     val shadeNotifications by notificationRepo.notifications.collectAsState()
@@ -185,28 +191,28 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                     ) {
                         NotificationShade(
                             themeColor = wallpaperColors.primary,
-                            isWifiOn = connectivity.wifiEnabled,
-                            isBluetoothOn = connectivity.bluetoothEnabled,
-                            isDoNotDisturb = connectivity.dndEnabled,
+                            isWifiOn = wifiOn,
+                            isBluetoothOn = bluetoothOn,
+                            isDoNotDisturb = dndOn,
                             isFlashlightOn = flashlightOn,
-                            isAirplaneMode = connectivity.airplaneMode,
+                            isAirplaneMode = airplaneOn,
                             isAutoRotateOn = autoRotateOn,
-                            isScreenRecording = false,
+                            isScreenRecording = screenRecording,
                             brightness = brightness / 255f,
                             mediaVolume = mediaVolume / 100f,
                             notifications = shadeNotifications,
                             listenerConnected = listenerConnected,
                             isResourceMonitorActive = false,
                             statusBarHeightDp = 28,
-                            onToggleWifi = { sp.toggleWifi() },
-                            onToggleBluetooth = { sp.toggleBluetooth() },
-                            onToggleDnd = { sp.toggleDnd() },
-                            onToggleFlashlight = { sp.toggleFlashlight() },
-                            onToggleAirplaneMode = { sp.toggleAirplaneMode() },
-                            onToggleAutoRotate = { sp.toggleAutoRotate() },
-                            onToggleScreenRecording = {},
-                            onSetBrightness = { sp.setBrightness((it * 255).toInt()) },
-                            onSetMediaVolume = { sp.setMediaVolume((it * 100).toInt()) },
+                            onToggleWifi = { qsm.toggleWifi() },
+                            onToggleBluetooth = { qsm.toggleBluetooth() },
+                            onToggleDnd = { qsm.toggleDnd() },
+                            onToggleFlashlight = { qsm.toggleFlashlight() },
+                            onToggleAirplaneMode = { qsm.toggleAirplaneMode() },
+                            onToggleAutoRotate = { qsm.toggleAutoRotate() },
+                            onToggleScreenRecording = { qsm.toggleScreenRecording() },
+                            onSetBrightness = { qsm.setBrightness((it * 255).toInt()) },
+                            onSetMediaVolume = { qsm.setMediaVolume((it * 100).toInt()) },
                             onDismissNotification = { id ->
                                 notificationRepo.dismissNotification(id.toString())
                             },

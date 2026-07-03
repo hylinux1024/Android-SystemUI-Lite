@@ -5,6 +5,7 @@ import com.android.systemui.lite.data.NotificationProvider
 import com.android.systemui.lite.data.SystemStateProvider
 import com.android.systemui.lite.data.WallpaperProvider
 import com.android.systemui.lite.plugins.PluginManager
+import com.android.systemui.lite.qs.QSTileManager
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
@@ -15,6 +16,7 @@ val appModule = module {
     single { NotificationProvider() }
     single { SystemStateProvider(androidContext()) }
     single { WallpaperProvider(androidContext()) }
+    single { QSTileManager(androidContext()) }
 }
 
 fun initKoin(context: Context) {
