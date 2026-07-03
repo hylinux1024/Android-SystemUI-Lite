@@ -166,8 +166,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Each QS tile now winds a meaningful Material Icons icon by label: Wi-Fi → Wifi, Bluetooth → Bluetooth, DND → NotificationsOff, Flashlight → FlashlightOn, Airplane → Flight, Auto-Rotate → ScreenRotation, Battery Saver → BatterySaver, Screen Rec → FiberManualRecord. Tint iconColor adapts to active/inactive/transitioning/unavailable for contrast (AC10)."
     }
   ]
 }

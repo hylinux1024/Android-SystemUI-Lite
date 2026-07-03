@@ -25,18 +25,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.BatterySaver
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.FlashlightOn
+import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -325,10 +333,15 @@ fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, i
     ) {
         Box {
             Icon(imageVector = when (label) {
-                "Wi-Fi" -> Icons.Default.Favorite; "Bluetooth" -> Icons.Default.Share; "DND" -> Icons.Default.Close
-                "Flashlight" -> Icons.Default.Star; "Airplane" -> Icons.Default.Info; "Auto-Rotate" -> Icons.Default.Refresh
-                "Battery Saver" -> Icons.Default.BatterySaver; "Screen Rec" -> Icons.Default.Notifications
-                else -> Icons.Default.Notifications
+                "Wi-Fi" -> Icons.Filled.Wifi
+                "Bluetooth" -> Icons.Filled.Bluetooth
+                "DND" -> Icons.Filled.NotificationsOff
+                "Flashlight" -> Icons.Filled.FlashlightOn
+                "Airplane" -> Icons.Filled.Flight
+                "Auto-Rotate" -> Icons.Filled.ScreenRotation
+                "Battery Saver" -> Icons.Filled.BatterySaver
+                "Screen Rec" -> Icons.Filled.FiberManualRecord
+                else -> Icons.Filled.Circle
             }, contentDescription = label, tint = iconColor, modifier = Modifier.size(16.dp))
             if (isActive && label == "Screen Rec") {
                 // Pulsing red "recording" dot in the corner beside the icon.

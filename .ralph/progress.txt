@@ -57,3 +57,21 @@ marked US-001..US-008 passes:true with one-line implementation notes each.
 Files touched: ScreenRecorderController.kt (new), ScreenRecorderActivity.kt (new),
 SystemStateProvider.kt, SystemUIModule.kt, NotificationShade.kt,
 AndroidManifest.xml, themes.xml.
+
+=== Iteration 11 — US-010: Each tile shows a correct, meaningful icon [2026-07-04]
+- ui/NotificationShade.kt: replaced the generic icon selector in QSTile with label-specific
+  Material Icons (Icons.Filled.*): Wi-Fi→Wifi, Bluetooth→Bluetooth, DND→NotificationsOff,
+  Flashlight→FlashlightOn, Airplane→Flight, Auto-Rotate→ScreenRotation,
+  Battery Saver→BatterySaver, Screen Rec→FiberManualRecord. Added imports for the new
+  filled icons; restored ArrowBack + Favorite (still used by sliders / media control).
+  Tint contrast already handled by the per-state iconColor.
+- AC checklist:
+  * AC1-8 (per-tile meaningful icons) — PASS: each tile wired to its distinct icon.
+  * AC9 (Material Icons or AOSP drawables) — PASS: all from androidx
+    .compose.material.icons.filled (material-icons-extended).
+  * AC10 (contrast in active/inactive) — PASS: iconColor varies per state.
+  * AC11 (typecheck) — PASS: ./gradlew :app:compileDebugKotlin BUILD SUCCESSFUL; 
+    ./gradlew :app:assembleDebug BUILD SUCCESSFUL.
+  * AC12 (browser verification) — SKIPPED: tiles render on-device in the SystemUI overlay;
+    browser-based verification is not applicable to this runtime Surface. All other ACs pass.
+Files touched: NotificationShade.kt.
