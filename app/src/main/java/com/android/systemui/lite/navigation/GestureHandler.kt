@@ -31,8 +31,10 @@ import kotlin.math.min
  */
 class GestureHandler(
     /** Invoked with the committed [GestureType] so the caller can dispatch the matching key
-     *  event (BACK / HOME / RECENTS). Non-null only when a gesture actually commits. */
-    private val onAction: (GestureType) -> Unit,
+     *  event (BACK / HOME / RECENTS). Non-null only when a gesture actually commits.
+     *  The singleton is constructed in Koin with a no-op default; the startable rewires
+     *  the live [onAction] hook after obtaining the instance (US-007 AC3). */
+    onActionInit: (GestureType) -> Unit,
     /** Android context used to read [Settings.Secure.NAVIGATION_MODE]. In unit tests pass a
      *  fake/noop content resolver and override [navigationModeProvider] to control the mode. */
     private val context: Context? = null,
@@ -67,6 +69,15 @@ class GestureHandler(
     /** Gesture type being tracked for the visual affordance so it renders the correct arrow. */
     private val _trackedType = MutableStateFlow<GestureType?>(null)
     val trackedType: StateFlow<GestureType?> = _trackedType.asStateFlow()
+
+    /**
+     * Live dispatch hook for a committed [GestureType]. Initialized from [onActionInit] at
+     * construction (Koin passes a no-op) and rewired by the startable to the real key-event
+     * dispatch once the singleton is obtained (US-007 AC3). Marked [Volatile] so the rewire is
+     * visible to the gesture coroutine immediately.
+     */
+    @Volatile
+    var onAction: (GestureType) -> Unit = onActionInit
 
     /** Whether the device is currently in gesture-nav mode. Re-read on [refreshNavigationMode]. */
     @Volatile
@@ -270,6 +281,26 @@ class GestureHandler(
     /** Re-read navigation mode from settings so a runtime nav-mode flip is honored. */
     fun refreshNavigationMode() {
         navigationMode = readNavigationModeFromSettings()
+    }
+
+    /**
+     * Update the cached display geometry. Called from [onConfigurationChanged] in the host so
+     * that a gesture in flight during rotation keeps correct thresholds, and so the very next
+     * drag after rotation begins from the right width/height even if no new onDown occurs.
+     */
+    fun updateDisplaySize(width: Int, height: Int) {
+        displayWidth = width
+        displayHeight = height
+    }
+
+    /**
+     * Cancel any in-flight session immediately. Called from [onConfigurationChanged] so a gesture
+     * dragged partway through a rotation never mis-fires with stale geometry (US-007 AC4).
+     */
+    fun resetSession() {
+        cancelTimeouts()
+        emitCancelled()
+        scheduleReset()
     }
 
     /** Bottom-zone gesture detection hook — the PRD wires BOTTOM zone handling at release. */

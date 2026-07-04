@@ -41,19 +41,14 @@ import com.android.systemui.lite.navigation.GestureHandler
 fun NavigationBarView(
     themeColor: Color,
     navigationMode: NavigationMode,
+    handler: GestureHandler,
     onBack: () -> Unit,
     onHome: () -> Unit,
     onRecents: () -> Unit
 ) {
     when (navigationMode) {
         NavigationMode.THREE_BUTTON -> ThreeButtonNavigationBar(themeColor, onBack, onHome, onRecents)
-        NavigationMode.GESTURES -> GestureNavRoot(onAction = { gesture ->
-            when (gesture) {
-                GestureType.BACK -> onBack()
-                GestureType.HOME -> onHome()
-                GestureType.RECENTS -> onRecents()
-            }
-        })
+        NavigationMode.GESTURES -> GestureNavRoot(handler)
     }
 }
 
@@ -84,28 +79,23 @@ fun ThreeButtonNavigationBar(
 }
 
 /**
- * Gesture-nav root. Holds a process-scoped [GestureHandler] fed by every pointer event in the
- * window and overlays the spring-animated back affordance on top. The Box fills its parent so it
- * covers both edge strips and the bottom zone (edge touches resolve to BACK, bottom touches to
- * HOME/RECENTS, with the zone locked at touch-down — see [GestureHandler]).
+ * Gesture-nav root. Receives the process-scoped Koin [GestureHandler] (US-007 AC3) and feeds
+ * every pointer event in the window into it, overlaying the spring-animated back affordance on
+ * top. The Box fills its parent so it covers both edge strips and the bottom zone (edge touches
+ * resolve to BACK, bottom touches to HOME/RECENTS, with the zone locked at touch-down — see
+ * [GestureHandler]).
  *
- * The handler's [GestureHandler.onAction] is supplied by [onAction], letting the startable wire the
- * matching `sendKeyEvent` without this file knowing about key codes.
+ * [GestureHandler.onAction] is wired by the startable (not here) to the real `sendKeyEvent`
+ * dispatch, so this file stays free of key codes.
+ *
+ * Touch gating: we install a drag detector over the full window (because the gesture overlay must
+ * receive edge/bottom swipes that the app below never sees), but we only *consume* a drag once
+ * [GestureHandler] has committed to tracking a session. Before that, the drag passes through the
+ * pointerInput chain underneath so taps and drags outside the swipe zones don't get swallowed.
  */
 @SuppressLint("UnusedBoxWithConstraintsScope")
 @Composable
-fun GestureNavRoot(onAction: (GestureType) -> Unit) {
-    val context = LocalContext.current
-    val density = LocalDensity.current.density
-    val scope = rememberCoroutineScope()
-    val handler = remember {
-        GestureHandler(
-            onAction = onAction,
-            context = context,
-            density = density,
-            scope = scope
-        )
-    }
+fun GestureNavRoot(handler: GestureHandler) {
     val session by handler.session.collectAsState()
     val trackedType by handler.trackedType.collectAsState()
 
@@ -115,6 +105,9 @@ fun GestureNavRoot(onAction: (GestureType) -> Unit) {
 
         var totalDragX by remember { mutableStateOf(0f) }
         var totalDragY by remember { mutableStateOf(0f) }
+        // Starts false; flips true the moment the handler begins tracking a drag, at which point
+        // subsequent deltas in this gesture session are consumed so they don't leak to the app.
+        var consuming by remember { mutableStateOf(false) }
 
         // Full-window touch routing: every pointer-down/move/up flows through GestureHandler so
         // edge swipes become BACK, bottom swipes HOME/RECENTS, and hold-and-release RECENTS.
@@ -122,16 +115,28 @@ fun GestureNavRoot(onAction: (GestureType) -> Unit) {
             Modifier.fillMaxSize().pointerInput(widthPx, heightPx) {
                 detectDragGestures(
                     onDragStart = { offset ->
-                        totalDragX = 0f; totalDragY = 0f
+                        totalDragX = 0f; totalDragY = 0f; consuming = false
                         handler.onDown(offset.x, offset.y, widthPx.toInt(), heightPx.toInt())
+                        // If onDown began a session, start consuming from this delta onward.
+                        consuming = handler.session.value != null
                     },
                     onDragEnd = { handler.onUp() },
                     onDragCancel = { handler.onUp() },
                     onDrag = { change, dragAmount ->
-                        change.consume()
-                        totalDragX += dragAmount.x
-                        totalDragY += dragAmount.y
-                        handler.onMove(dragAmount.x, dragAmount.y, totalDragX, totalDragY)
+                        if (consuming) {
+                            change.consume()
+                            totalDragX += dragAmount.x
+                            totalDragY += dragAmount.y
+                            handler.onMove(dragAmount.x, dragAmount.y, totalDragX, totalDragY)
+                        } else if (handler.session.value != null) {
+                            // Handler just transitioned ENTRY->ACTIVE mid-drag; begin consuming.
+                            consuming = true
+                            change.consume()
+                            totalDragX += dragAmount.x
+                            totalDragY += dragAmount.y
+                            handler.onMove(dragAmount.x, dragAmount.y, totalDragX, totalDragY)
+                        }
+                        // Otherwise leave unconsumed so the app below receives the drag.
                     }
                 )
             }

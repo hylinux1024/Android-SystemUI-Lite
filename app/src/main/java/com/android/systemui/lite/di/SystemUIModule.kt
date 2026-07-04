@@ -27,7 +27,7 @@ val appModule = module {
      * close/reopen and the Compose view and startable can share the same instance.
      * [onAction] defaults to a no-op; the startable wires the real key-event dispatch.
      */
-    single { GestureHandler(onAction = { }, context = androidContext()) }
+    single { GestureHandler(onActionInit = { }, context = androidContext()) }
 }
 
 fun initKoin(context: Context) {

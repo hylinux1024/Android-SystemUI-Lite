@@ -35,7 +35,7 @@ class GestureHandlerTest {
     ): Pair<GestureHandler, MutableList<GestureType>> {
         val actions = mutableListOf<GestureType>()
         val h = GestureHandler(
-            onAction = { onAction(it); actions.add(it) },
+            onActionInit = { onAction(it); actions.add(it) },
             context = null,
             navigationModeProvider = {
                 if (gestureMode) GestureHandler.RESET_MODE_ON else GestureHandler.RESET_MODE_OFF
@@ -270,7 +270,7 @@ class GestureHandlerTest {
     fun `refreshNavigationMode updates in-memory mode`() = runTest {
         var mode = GestureHandler.RESET_MODE_ON
         val h = GestureHandler(
-            onAction = {},
+            onActionInit = {},
             navigationModeProvider = { mode }
         )
         assertEquals(GestureHandler.RESET_MODE_ON, h.navigationMode)
