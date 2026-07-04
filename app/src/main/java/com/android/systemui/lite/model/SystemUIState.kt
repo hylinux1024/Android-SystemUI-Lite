@@ -136,8 +136,46 @@ enum class NavigationMode {
     GESTURES
 }
 
+/** Which edge of the screen a gesture overlay window covers. */
+enum class GestureEdge {
+    LEFT,
+    RIGHT,
+    BOTTOM
+}
+
 enum class QSPanelTab {
     TILES,
     MEDIA,
     INFO
 }
+
+enum class GestureState {
+    GONE,
+    ENTRY,
+    ACTIVE,
+    INACTIVE,
+    COMMITTED,
+    CANCELLED
+}
+
+enum class TouchZone {
+    LEFT_EDGE,
+    RIGHT_EDGE,
+    BOTTOM,
+    NONE
+}
+
+enum class GestureType {
+    BACK,
+    HOME,
+    RECENTS
+}
+
+data class GestureSession(
+    val zone: TouchZone,
+    val startX: Float,
+    val startY: Float,
+    val startTimeMs: Long,
+    val state: GestureState,
+    val progress: Float
+)

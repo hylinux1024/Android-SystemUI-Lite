@@ -42,6 +42,12 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <!-- Screen recording: audio capture (degrades gracefully to video-only if denied) + -->
+    <!-- a foreground-service media-projection token on API 34+ (US-009 AC7).           -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.MANAGE_SENSOR_PRIVACY" />
     <uses-permission android:name="android.permission.CONTROL_DISPLAY_BRIGHTNESS" />
     <uses-permission android:name="android.permission.DEVICE_POWER" />
@@ -108,6 +114,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Screen-recording consent trampoline: no UI of its own; only visible while the
+             system's "Start recording / cancel" dialog is on screen (US-009 AC1). Finishes
+             as soon as the dialog is answered and forwards the token to the controller. -->
+        <activity
+            android:name=".ui.ScreenRecorderActivity"
+            android:exported="false"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.SystemUILite.ScreenRecorder" />
+
+        <!-- Foreground-service host for screen recording (API 34+ MediaProjection requires it). -->
+        <service
+            android:name=".data.ScreenRecorderService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
 
     </application>
 

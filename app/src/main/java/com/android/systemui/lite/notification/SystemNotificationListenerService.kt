@@ -30,6 +30,26 @@ class SystemNotificationListenerService : NotificationListenerService() {
         GlobalContext.get().get<NotificationProvider>()
     }
 
+    private val qsm by lazy {
+        GlobalContext.get().get<com.android.systemui.lite.qs.QSTileManager>()
+    }
+
+    private val appNotificationManager by lazy {
+        getSystemService(android.content.Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+    }
+
+    /**
+     * True when the platform's current interruption filter is anything but ALL — i.e.
+     * DND is active at some level (PRIORITY, ALARMS, or NONE). Callers use this to
+     * suppress surface-level alerts without actually cancelling the underlying
+     * notification (US-007 AC2).
+     */
+    private fun isDndSuppressingNotifications(): Boolean {
+        val filter = appNotificationManager?.currentInterruptionFilter
+            ?: return false
+        return filter != NotificationListenerService.INTERRUPTION_FILTER_ALL
+    }
+
     // Internal notification tracking
     private val activeNotifications = linkedMapOf<String, NotificationItem>()
 
@@ -103,6 +123,14 @@ class SystemNotificationListenerService : NotificationListenerService() {
 
         if (sbn.packageName == packageName) return
         if (sbn.packageName == "com.android.systemui") return
+
+        // US-007 AC2 — when DND is ON we suppress visible alerts in our shade. We
+        // read the live interruption filter rather than our own cached StateFlow so
+        // we honor changes made elsewhere (e.g. lock screen, system UI, bubbles).
+        if (isDndSuppressingNotifications()) {
+            notificationProvider.appendLog("onNotificationPosted: suppressed by DND — pkg=${sbn.packageName}")
+            return
+        }
 
         try {
             val item = convertToNotificationItem(sbn)

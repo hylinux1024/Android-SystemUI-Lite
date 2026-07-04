@@ -1,10 +1,14 @@
 package com.android.systemui.lite.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,25 +28,42 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.BatterySaver
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.FlashlightOn
+import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.onSizeChanged
@@ -50,10 +71,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,10 +87,13 @@ fun NotificationShade(
     themeColor: Color,
     isWifiOn: Boolean,
     isBluetoothOn: Boolean,
+    isBluetoothTransitioning: Boolean = false,
     isDoNotDisturb: Boolean,
     isFlashlightOn: Boolean,
+    isFlashlightAvailable: Boolean = true,
     isAirplaneMode: Boolean,
     isAutoRotateOn: Boolean,
+    isBatterySaverOn: Boolean,
     isScreenRecording: Boolean,
     brightness: Float,
     mediaVolume: Float,
@@ -83,7 +107,18 @@ fun NotificationShade(
     onToggleFlashlight: () -> Unit,
     onToggleAirplaneMode: () -> Unit,
     onToggleAutoRotate: () -> Unit,
+    onToggleBatterySaver: () -> Unit,
     onToggleScreenRecording: () -> Unit,
+    // Long-press callbacks — each fires after the shade closes. Tiles with no detail
+    // panel pass a no-op lambda from ShadeCoreStartable.
+    onLongPressWifi: () -> Unit = {},
+    onLongPressBluetooth: () -> Unit = {},
+    onLongPressDnd: () -> Unit = {},
+    onLongPressFlashlight: () -> Unit = {},
+    onLongPressAirplaneMode: () -> Unit = {},
+    onLongPressAutoRotate: () -> Unit = {},
+    onLongPressBatterySaver: () -> Unit = {},
+    onLongPressScreenRecording: () -> Unit = {},
     onSetBrightness: (Float) -> Unit,
     onSetMediaVolume: (Float) -> Unit,
     onDismissNotification: (Any) -> Unit,
@@ -98,63 +133,97 @@ fun NotificationShade(
     modifier: Modifier = Modifier
 ) {
     val lazyListState = rememberLazyListState()
-    var accumCloseY by remember { mutableFloatStateOf(0f) }
     var viewHeightPx by remember { mutableFloatStateOf(0f) }
-
-    val shadeCloseConnection = remember(lazyListState) {
-        object : NestedScrollConnection {
-            private fun isAtTop() = lazyListState.firstVisibleItemIndex == 0 && lazyListState.firstVisibleItemScrollOffset == 0
-
-            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                if (available.y < 0 && isAtTop()) {
-                    accumCloseY += -available.y
-                    if (viewHeightPx > 0f) {
-                        val progress = (1f - accumCloseY / viewHeightPx).coerceIn(0f, 1f)
-                        onDragShade?.invoke(progress)
-                    }
-                    return androidx.compose.ui.geometry.Offset(0f, available.y)
-                }
-                if (available.y > 0) {
-                    accumCloseY = (accumCloseY - available.y).coerceAtLeast(0f)
-                    if (viewHeightPx > 0f && accumCloseY > 0f) {
-                        val progress = (1f - accumCloseY / viewHeightPx).coerceIn(0f, 1f)
-                        onDragShade?.invoke(progress)
-                    }
-                }
-                return androidx.compose.ui.geometry.Offset.Zero
-            }
-
-            override suspend fun onPreFling(available: Velocity): Velocity {
-                if (available.y < 0 && accumCloseY > 120f) {
-                    onCloseShade()
-                    accumCloseY = 0f
-                    return available
-                }
-                onOpenShade?.invoke()
-                accumCloseY = 0f
-                return Velocity.Zero
-            }
-        }
-    }
+    val cleanNotifs = notifications.filter { it.type != NotificationType.MUSIC }
+    // Touch slop used by the swipe-up-to-close detector below. Captured here (not
+    // inside the suspend block) so the Modifier chain stays outside the recomposer.
+    val touchSlop = LocalViewConfiguration.current.touchSlop
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { viewHeightPx = it.height.toFloat() }
             .background(Color.Black.copy(alpha = 0.92f))
+            .pointerInput(Unit) {
+                // Manual swipe-up-to-close detector running on the Initial pass
+                // (parent-first), exactly like AOSP's NotificationPanelViewController
+                // TouchHandler.onInterceptTouchEvent: the panel wins the gesture away
+                // from children (LazyColumn, QS-tile scrollable, empty-state scrollable)
+                // once an upward drag past touch slop begins while the panel is
+                // collapsible — i.e. the list is scrolled to top OR the list is empty.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    var prevTimeMs = down.uptimeMillis
+                    var prevY = down.position.y
+                    var totalDragY = 0f
+                    var armed = false
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        // Find the change for our pointer without a lambda predicate so the
+                        // compiler can infer the type unambiguously.
+                        var change: PointerInputChange? = null
+                        for (c in event.changes) {
+                            if (c.id == down.id) { change = c; break }
+                        }
+                        val current = change ?: break
+                        if (!current.pressed) {
+                            if (armed && viewHeightPx > 0f) {
+                                val progress = (1f + totalDragY / viewHeightPx).coerceIn(0f, 1f)
+                                val dtMs = (current.uptimeMillis - prevTimeMs).coerceAtLeast(1)
+                                val velocityY = (current.position.y - prevY) / dtMs * 1000f
+                                if (progress < 0.6f || velocityY < -600f) onCloseShade()
+                                else onOpenShade?.invoke()
+                            }
+                            break
+                        }
+                        // Compose 1.7.x has no public positionChange(); compute the per-event
+                        // delta manually from the previous position. This is exactly what
+                        // positionChange() returns in newer Compose versions.
+                        val dy = current.position.y - prevY
+                        prevTimeMs = current.uptimeMillis
+                        prevY = current.position.y
+                        totalDragY += dy
+                        val contentAtTop = lazyListState.firstVisibleItemIndex == 0 &&
+                            lazyListState.firstVisibleItemScrollOffset == 0
+                        if (!armed && totalDragY < -touchSlop &&
+                            (contentAtTop || cleanNotifs.isEmpty())) {
+                            armed = true
+                        }
+                        if (armed) {
+                            current.consume()
+                            if (viewHeightPx > 0f) {
+                                val progress = (1f + totalDragY / viewHeightPx).coerceIn(0f, 1f)
+                                onDragShade?.invoke(progress)
+                            }
+                        }
+                    }
+                }
+            }
             .padding(top = (statusBarHeightDp + 16).dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
-            .nestedScroll(shadeCloseConnection)
     ) {
         Box(Modifier.scrollable(rememberScrollState(), Orientation.Vertical)) {
             Column {
+                // Each tile carries its active state, an optional per-tile transitioning
+                // flag (Bluetooth — US-005), and an optional availability flag
+                // (Flashlight — US-006: disabled/grey when the device has no torch).
+                data class Toggle(
+                    val label: String,
+                    val active: Boolean,
+                    val transitioning: Boolean = false,
+                    val available: Boolean = true,
+                    val onToggle: () -> Unit,
+                    val onLongPress: () -> Unit = {}
+                )
+
                 val toggles = listOf(
-                    Triple("Wi-Fi", isWifiOn, onToggleWifi),
-                    Triple("Bluetooth", isBluetoothOn, onToggleBluetooth),
-                    Triple("DND", isDoNotDisturb, onToggleDnd),
-                    Triple("Flashlight", isFlashlightOn, onToggleFlashlight),
-                    Triple("Airplane", isAirplaneMode, onToggleAirplaneMode),
-                    Triple("Auto-Rotate", isAutoRotateOn, onToggleAutoRotate),
-                    Triple("Screen Rec", isScreenRecording, onToggleScreenRecording)
+                    Toggle("Wi-Fi", isWifiOn, onToggle = { onToggleWifi() }, onLongPress = onLongPressWifi),
+                    Toggle("Bluetooth", isBluetoothOn, isBluetoothTransitioning, onToggle = { onToggleBluetooth() }, onLongPress = onLongPressBluetooth),
+                    Toggle("DND", isDoNotDisturb, onToggle = { onToggleDnd() }, onLongPress = onLongPressDnd),
+                    Toggle("Flashlight", isFlashlightOn, available = isFlashlightAvailable, onToggle = { onToggleFlashlight() }, onLongPress = onLongPressFlashlight),
+                    Toggle("Airplane", isAirplaneMode, onToggle = { onToggleAirplaneMode() }, onLongPress = onLongPressAirplaneMode),
+                    Toggle("Auto-Rotate", isAutoRotateOn, onToggle = { onToggleAutoRotate() }, onLongPress = onLongPressAutoRotate),
+                    Toggle("Battery Saver", isBatterySaverOn, onToggle = { onToggleBatterySaver() }, onLongPress = onLongPressBatterySaver),
+                    Toggle("Screen Rec", isScreenRecording, onToggle = { onToggleScreenRecording() }, onLongPress = onLongPressScreenRecording)
                 )
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -164,24 +233,17 @@ fun NotificationShade(
                 Spacer(Modifier.height(8.dp))
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Row 1
+                    // Row 1 — tiles 1..4
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        toggles.take(3).forEach { tile ->
-                            QSTile(tile.first, tile.second, tile.third, themeColor, Modifier.weight(1f))
+                        toggles.take(4).forEach { tile ->
+                            QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(1f), tile.onLongPress)
                         }
                     }
-                    // Row 2
+                    // Row 2 — tiles 5..8
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        toggles.drop(3).take(3).forEach { tile ->
-                            QSTile(tile.first, tile.second, tile.third, themeColor, Modifier.weight(1f))
+                        toggles.drop(4).forEach { tile ->
+                            QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(1f), tile.onLongPress)
                         }
-                    }
-                    // Row 3
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        toggles.drop(6).firstOrNull()?.let { tile ->
-                            QSTile(tile.first, tile.second, tile.third, themeColor, Modifier.weight(0.33f))
-                        }
-                        Spacer(Modifier.weight(0.67f))
                     }
                 }
 
@@ -225,7 +287,6 @@ fun NotificationShade(
         Spacer(Modifier.height(6.dp))
 
         Box(Modifier.weight(1f)) {
-            val cleanNotifs = notifications.filter { it.type != NotificationType.MUSIC }
             if (cleanNotifs.isEmpty()) {
                 Box(
                     Modifier
@@ -259,26 +320,92 @@ fun NotificationShade(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun QSTile(label: String, isActive: Boolean, onClick: () -> Unit, themeColor: Color, modifier: Modifier = Modifier) {
+fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, isAvailable: Boolean = true, onClick: () -> Unit, themeColor: Color, modifier: Modifier = Modifier, onLongClick: () -> Unit = {}) {
     val activeBg = Color(0xFFD3E4FF)
     val inactiveBg = Color(0xFF30343A)
     val activeTextColor = Color(0xFF001C38)
     val inactiveTextColor = Color(0xFFE2E2E6)
+    // transition colors
+    val transitionBg = themeColor.copy(alpha = 0.18f)
+    val transitionTextColor = Color(0xFFE2E2E6)
+    // unavailable (no torch / hardware missing) — flat grey, no highlight, no press.
+    val unavailableBg = Color(0xFF1C1C1E)
+    val unavailableTextColor = Color.White.copy(alpha = 0.28f)
+
+    // When unavailable, tile is neither active nor press-reacting; show a static
+    // greyscale visual so the user understands the feature is missing (US-006 AC4).
+    val bg = when {
+        !isAvailable -> unavailableBg
+        isTransitioning -> transitionBg
+        isActive -> activeBg
+        else -> inactiveBg
+    }
+    val border = when {
+        !isAvailable -> Color.White.copy(alpha = 0.04f)
+        isTransitioning -> themeColor
+        isActive -> Color.Transparent
+        else -> Color.White.copy(alpha = 0.05f)
+    }
+    val textColor = when {
+        !isAvailable -> unavailableTextColor
+        isTransitioning -> transitionTextColor
+        isActive -> activeTextColor
+        else -> inactiveTextColor.copy(alpha = 0.8f)
+    }
+    val iconColor = when {
+        !isAvailable -> unavailableTextColor
+        isTransitioning -> transitionTextColor
+        isActive -> activeTextColor
+        else -> inactiveTextColor
+    }
+
+    // Recording pulse: for an active Screen Rec tile, pulse a red dot so the tile's
+    // recording state is clearly "animated" (US-009 AC3). Non-recording tiles bypass
+    // the transition entirely so we don't pay an extra animation frame per frame.
+    val showRecordingPulse = isActive && label == "Screen Rec"
+    val recordingPulse by animateRecordingPulse(showRecordingPulse, label)
+
     Column(
-        modifier.shadow(4.dp, RoundedCornerShape(16.dp)).background(if (isActive) activeBg else inactiveBg, RoundedCornerShape(16.dp))
-            .border(1.dp, if (isActive) Color.Transparent else Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
-            .clickable { onClick() }.padding(vertical = 10.dp, horizontal = 4.dp),
+        modifier.shadow(4.dp, RoundedCornerShape(16.dp)).background(bg, RoundedCornerShape(16.dp))
+            .border(1.dp, border, RoundedCornerShape(16.dp))
+            .combinedClickable(enabled = isAvailable && !isTransitioning, onClick = onClick, onLongClick = onLongClick).padding(vertical = 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
     ) {
-        Icon(imageVector = when (label) {
-            "Wi-Fi" -> Icons.Default.Favorite; "Bluetooth" -> Icons.Default.Share; "DND" -> Icons.Default.Close
-            "Flashlight" -> Icons.Default.Star; "Airplane" -> Icons.Default.Info; "Auto-Rotate" -> Icons.Default.Refresh
-            else -> Icons.Default.Notifications
-        }, contentDescription = label, tint = if (isActive) activeTextColor else inactiveTextColor, modifier = Modifier.size(16.dp))
+        Box {
+            Icon(imageVector = when (label) {
+                "Wi-Fi" -> Icons.Filled.Wifi
+                "Bluetooth" -> Icons.Filled.Bluetooth
+                "DND" -> Icons.Filled.NotificationsOff
+                "Flashlight" -> Icons.Filled.FlashlightOn
+                "Airplane" -> Icons.Filled.Flight
+                "Auto-Rotate" -> Icons.Filled.ScreenRotation
+                "Battery Saver" -> Icons.Filled.BatterySaver
+                "Screen Rec" -> Icons.Filled.FiberManualRecord
+                else -> Icons.Filled.Circle
+            }, contentDescription = label, tint = iconColor, modifier = Modifier.size(16.dp))
+            if (isActive && label == "Screen Rec") {
+                // Pulsing red "recording" dot in the corner beside the icon.
+                Canvas(Modifier.size(8.dp).align(Alignment.TopEnd).offset(x = 7.dp, y = (-5).dp)) {
+                    drawCircle(color = Color(0xFFFF3B30).copy(alpha = recordingPulse), radius = size.minDimension / 2f)
+                }
+            }
+        }
         Spacer(Modifier.height(4.dp))
-        Text(label, color = if (isActive) activeTextColor else inactiveTextColor.copy(alpha = 0.8f), fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, color = textColor, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
+}
+
+@Composable
+private fun animateRecordingPulse(active: Boolean, label: String): State<Float> {
+    if (!active) return remember { mutableStateOf(0f) }
+    return rememberInfiniteTransition(label = "sc-$label-rec-pulse")
+        .animateFloat(
+            initialValue = 0.35f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+            label = "sc-$label-rec-pulse-alpha"
+        )
 }
 
 @Composable

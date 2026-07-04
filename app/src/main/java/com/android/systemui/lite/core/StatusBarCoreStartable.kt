@@ -124,10 +124,13 @@ class StatusBarCoreStartable(
             setContent {
                 MaterialTheme {
                     val battery by sp.battery.collectAsState()
-                    val connectivity by sp.connectivity.collectAsState()
                     val timeString by sp.timeString.collectAsState()
                     val cutout by _cutoutInfo.collectAsState()
                     val shadeProgress by shadeController.shadeProgress.collectAsState()
+                    val wifiOn by sp.wifiEnabled.collectAsState()
+                    val bluetoothOn by sp.bluetoothEnabled.collectAsState()
+                    val dndOn by sp.dndEnabled.collectAsState()
+                    val airplaneOn by sp.airplaneModeEnabled.collectAsState()
 
                     StatusBar(
                         heightDp = 28,
@@ -136,10 +139,10 @@ class StatusBarCoreStartable(
                         batteryStyle = com.android.systemui.lite.model.BatteryPercentageStyle.ICON_AND_TEXT,
                         batteryLevel = battery.level,
                         isCharging = battery.isCharging,
-                        isWifiOn = connectivity.wifiEnabled,
-                        isBluetoothOn = connectivity.bluetoothEnabled,
-                        isDoNotDisturb = connectivity.dndEnabled,
-                        isAirplaneMode = connectivity.airplaneMode,
+                        isWifiOn = wifiOn,
+                        isBluetoothOn = bluetoothOn,
+                        isDoNotDisturb = dndOn,
+                        isAirplaneMode = airplaneOn,
                         timeString = timeString,
                         isTrafficActive = false,
                         themeColor = androidx.compose.ui.graphics.Color(0xFF00ADB5),

@@ -1,0 +1,19 @@
+# Ralph Progress Log
+Started: 2026年 7月 4日 星期六 10时03分31秒 CST
+---
+
+=== Iteration 1 — US-001: Add GestureState and TouchZone enums to the shared model [2026-07-04]
+- model/SystemUIState.kt: appended enum class GestureState { GONE, ENTRY, ACTIVE, INACTIVE,
+  COMMITTED, CANCELLED }, enum class TouchZone { LEFT_EDGE, RIGHT_EDGE, BOTTOM, NONE },
+  enum class GestureType { BACK, HOME, RECENTS }, and data class GestureSession(zone,
+  startX, startY, startTimeMs, state, progress). Existing enums (NavigationMode,
+  NotificationType, ClockPosition, BatteryPercentageStyle, QSPanelTab) untouched.
+- AC checklist:
+  * AC1 (GestureState enum with 6 values) — PASS
+  * AC2 (TouchZone enum with 4 values) — PASS
+  * AC3 (GestureType enum with 3 values) — PASS
+  * AC4 (GestureSession data class with zone, startX, startY, startTimeMs, state, progress) — PASS
+  * AC5 (existing enums not modified) — PASS
+  * AC6 (typecheck passes) — PASS: ./gradlew compileDebugKotlin BUILD SUCCESSFUL.
+Files touched: model/SystemUIState.kt.
+Branch: ralph/fullscreen-gestures (created from ralph/qs-tiles).

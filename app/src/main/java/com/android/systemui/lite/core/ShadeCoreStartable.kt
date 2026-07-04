@@ -25,6 +25,7 @@ import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.android.systemui.lite.CoreStartable
 import com.android.systemui.lite.data.NotificationProvider
+import com.android.systemui.lite.data.SystemStateProvider
 import com.android.systemui.lite.data.WallpaperProvider
 import com.android.systemui.lite.ui.NotificationShade
 import kotlinx.coroutines.CoroutineScope
@@ -49,7 +50,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     private val windowHost = WindowHost()
     private val scope = CoroutineScope(Dispatchers.Main)
     private val sp by lazy {
-        GlobalContext.get().get<com.android.systemui.lite.data.SystemStateProvider>()
+        GlobalContext.get().get<SystemStateProvider>()
     }
     private val wp by lazy {
         GlobalContext.get().get<WallpaperProvider>()
@@ -69,6 +70,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     override fun start() {
         Log.d(TAG, "Starting ShadeCoreStartable...")
         windowHost.start()
+        sp.start()
         wp.start()
         Log.d(TAG, "ShadeCoreStartable started")
     }
@@ -81,6 +83,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
         shadeAnimJob?.cancel()
         scope.cancel()
         closeShade()
+        sp.stop()
         wp.stop()
         windowHost.destroy()
     }
@@ -135,6 +138,10 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     private fun ensureShadeWindow() {
         if (isShadeWindowAdded) return
 
+        // Re-read all platform-controlled QS state so the shade reflects anything the
+        // user changed while it was closed (e.g. airplane mode from system Settings).
+        sp.refreshTileState()
+
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         @Suppress("DEPRECATION")
@@ -164,11 +171,18 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
 
             setContent {
                 MaterialTheme {
-                    val connectivity by sp.connectivity.collectAsState()
+                    val wifiOn by sp.wifiEnabled.collectAsState()
+                    val bluetoothOn by sp.bluetoothEnabled.collectAsState()
+                    val bluetoothTransitioning by sp.bluetoothTransitioning.collectAsState()
+                    val dndOn by sp.dndEnabled.collectAsState()
+                    val airplaneOn by sp.airplaneModeEnabled.collectAsState()
+                    val flashlightOn by sp.flashlightEnabled.collectAsState()
+                    val flashlightAvailableState = sp.flashlightAvailable.collectAsState()
+                    val autoRotateOn by sp.autoRotateEnabled.collectAsState()
+                    val batterySaverOn by sp.batterySaverEnabled.collectAsState()
+                    val screenRecording by sp.screenRecording.collectAsState()
                     val brightness by sp.brightness.collectAsState()
                     val mediaVolume by sp.mediaVolume.collectAsState()
-                    val flashlightOn by sp.flashlightEnabled.collectAsState()
-                    val autoRotateOn by sp.autoRotateEnabled.collectAsState()
                     val progress by _shadeProgress.collectAsState()
                     val wallpaperColors by wp.wallpaperColors.collectAsState()
                     val shadeNotifications by notificationRepo.notifications.collectAsState()
@@ -185,26 +199,45 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                     ) {
                         NotificationShade(
                             themeColor = wallpaperColors.primary,
-                            isWifiOn = connectivity.wifiEnabled,
-                            isBluetoothOn = connectivity.bluetoothEnabled,
-                            isDoNotDisturb = connectivity.dndEnabled,
+                            isWifiOn = wifiOn,
+                            isBluetoothOn = bluetoothOn,
+                            isBluetoothTransitioning = bluetoothTransitioning,
+                            isDoNotDisturb = dndOn,
                             isFlashlightOn = flashlightOn,
-                            isAirplaneMode = connectivity.airplaneMode,
+                            isFlashlightAvailable = flashlightAvailableState.value ?: true,
+                            isAirplaneMode = airplaneOn,
                             isAutoRotateOn = autoRotateOn,
-                            isScreenRecording = false,
+                            isBatterySaverOn = batterySaverOn,
+                            isScreenRecording = screenRecording,
                             brightness = brightness / 255f,
                             mediaVolume = mediaVolume / 100f,
                             notifications = shadeNotifications,
                             listenerConnected = listenerConnected,
                             isResourceMonitorActive = false,
                             statusBarHeightDp = 28,
+                            // In-place toggle tiles (Wi-Fi / Bluetooth / DND / Flashlight /
+                            // Airplane / Auto-Rotate): shade stays open so the user sees the
+                            // tile state flip immediately. Only Battery Saver and Screen Rec
+                            // close the shade — they both bounce to an external activity /
+                            // consent flow, so the panel must be out of the way first.
                             onToggleWifi = { sp.toggleWifi() },
                             onToggleBluetooth = { sp.toggleBluetooth() },
                             onToggleDnd = { sp.toggleDnd() },
                             onToggleFlashlight = { sp.toggleFlashlight() },
                             onToggleAirplaneMode = { sp.toggleAirplaneMode() },
                             onToggleAutoRotate = { sp.toggleAutoRotate() },
-                            onToggleScreenRecording = {},
+                            onToggleBatterySaver = { animateShadeTo(0f); sp.toggleBatterySaver() },
+                            onToggleScreenRecording = { animateShadeTo(0f); sp.toggleScreenRecording() },
+                            // Long-press: close the shade, then open the matching system
+                            // settings screen (AOSP QS tile long-press convention).
+                            onLongPressWifi = { animateShadeTo(0f); sp.openWifiSettings() },
+                            onLongPressBluetooth = { animateShadeTo(0f); sp.openBluetoothSettings() },
+                            onLongPressDnd = { animateShadeTo(0f); sp.openDndSettings() },
+                            onLongPressFlashlight = { /* no settings screen */ },
+                            onLongPressAirplaneMode = { animateShadeTo(0f); sp.openAirplaneModeSettings() },
+                            onLongPressAutoRotate = { animateShadeTo(0f); sp.openAutoRotateSettings() },
+                            onLongPressBatterySaver = { animateShadeTo(0f); sp.openBatterySettings() },
+                            onLongPressScreenRecording = { /* no settings screen */ },
                             onSetBrightness = { sp.setBrightness((it * 255).toInt()) },
                             onSetMediaVolume = { sp.setMediaVolume((it * 100).toInt()) },
                             onDismissNotification = { id ->

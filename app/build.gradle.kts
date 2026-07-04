@@ -69,6 +69,9 @@ dependencies {
   // Compose - keep for status bar and notification shade UI
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.androidx.compose.material.icons.core)
+  // Required for QS tile icons (BatterySaver, Wifi, Bluetooth, Flashlight,
+  // ScreenRecord, AirplaneMode — US-008 / US-010).
+  implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.graphics)
@@ -90,6 +93,7 @@ dependencies {
 
   // Test
   testImplementation(libs.junit)
+  testImplementation(libs.kotlinx.coroutines.test)
   androidTestImplementation(platform(libs.androidx.compose.bom))
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   debugImplementation(libs.androidx.compose.ui.tooling)
