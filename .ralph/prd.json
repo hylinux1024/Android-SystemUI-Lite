@@ -1,173 +1,135 @@
 {
   "project": "SystemUI-Lite2",
-  "branchName": "ralph/qs-tiles",
-  "description": "Quick Settings Tile Functionality — Make every QS tile toggle a real system state, suppress notifications for DND, record the screen, fix Bluetooth sync, and consolidate duplicate state ownership",
+  "branchName": "ralph/fullscreen-gestures",
+  "description": "Full-Screen Gesture Navigation \u2014 Replace the thin bottom gesture bar with proper three-zone edge/bottom gesture detection matching Android 14+ stock behavior (edge back swipe, bottom home swipe, bottom-hold recents swipe) with a spring-animated visual affordance on the back gesture.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Consolidate tile state ownership between QSTileManager and SystemStateProvider",
-      "description": "As a developer, I want a single clear owner of QS tile state and toggles so that tile behavior is easy to extend and there is only one place to look.",
+      "title": "Add GestureState and TouchZone enums to the shared model",
+      "description": "As a developer, I need a single source-of-truth for gesture lifecycle states and screen zones so that all gesture code (handler, visual panel, view) shares the same vocabulary.",
       "acceptanceCriteria": [
-        "One of QSTileManager.kt or SystemStateProvider.kt becomes the canonical QS state + actions class and the other has its QS-relevant code removed",
-        "The remaining class is registered in the Koin module (SystemUIModule) as the single QSTileManager-type dependency",
-        "All 7 tiles wire through the single class — no tile references both",
-        "The NotificationShade composable sends tile taps to the consolidated class",
-        "Class name and package clearly express its role with a 3-line comment at top of file documenting the responsibility split",
-        "No duplicate BroadcastReceiver logic; one receiver handles all state-change intents",
-        "Typecheck passes",
-        "App builds and all existing non-QS features (status bar, notification shade, navigation bar, wallpaper) still work after refactor"
+        "model/SystemUIState.kt adds enum class GestureState { GONE, ENTRY, ACTIVE, INACTIVE, COMMITTED, CANCELLED }",
+        "model/SystemUIState.kt adds enum class TouchZone { LEFT_EDGE, RIGHT_EDGE, BOTTOM, NONE }",
+        "model/SystemUIState.kt adds enum class GestureType { BACK, HOME, RECENTS }",
+        "model/SystemUIState.kt adds data class GestureSession(val zone: TouchZone, val startX: Float, val startY: Float, val startTimeMs: Long, val state: GestureState, val progress: Float)",
+        "Existing enums (NavigationMode, NotificationType, etc.) are not modified or removed",
+        "Typecheck passes"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "QSTileManager (qs/) is now canonical QS state+actions class with a single receiver for wifi/bt/airplane/dnd intents; SystemStateProvider (data/) reduced to ambient status-bar state (battery/time/location). Rewired ShadeCoreStartable (tile state+toggles + qsm lifecycle) and StatusBarCoreStartable (connectivity icon reads); registered QSTileManager in Koin."
+      "notes": "Added GestureState, TouchZone, GestureType enums and GestureSession data class to model/SystemUIState.kt; existing enums untouched; ./gradlew compileDebugKotlin BUILD SUCCESSFUL."
     },
     {
       "id": "US-002",
-      "title": "Wi-Fi tile actually turns Wi-Fi on/off",
-      "description": "As a user, I want to tap the Wi-Fi tile and have Wi-Fi actually toggle on or off, so that I can use the shade to manage connectivity instead of going into Settings.",
+      "title": "Pure zone-detection and edge-exclusion logic in GestureZones",
+      "description": "As a gesture handler, I need reusable, UI-free functions to classify a touch-down coordinate into a zone and decide whether a touch should be ignored (exclusion zones), so the Compose view can delegate decisions to testable logic.",
       "acceptanceCriteria": [
-        "Tapping Wi-Fi tile calls WifiManager.setWifiEnabled(true/false) and the tile's visual active/inactive state reflects the result",
-        "Tile state updates when the system broadcasts WifiManager.WIFI_STATE_CHANGED_ACTION",
-        "On Android 10+ where WifiManager.setWifiEnabled is restricted, tile falls back to opening Settings.Panel.ACTION_WIFI rather than silently failing",
-        "No duplicate Wi-Fi state logic between QSTileManager and SystemStateProvider after refactor",
+        "navigation/GestureZones.kt created with GestureZones object",
+        "fun detectZone(x: Float, y: Float, displayWidth: Int, displayHeight: Int, edgeWidthPx: Float): TouchZone returns LEFT_EDGE / RIGHT_EDGE / BOTTOM / NONE using US-001 enums",
+        "LEFT_EDGE when x < edgeWidthPx, RIGHT_EDGE when x > displayWidth - edgeWidthPx, BOTTOM when y > displayHeight - bottomZoneHeightPx, with edge zones checked first so back takes priority over bottom",
+        "fun isExcluded(x: Float, y: Float, displayWidth: Int, displayHeight: Int): Boolean returns true when the point falls in the bottom ~20% of the left/right edge (rotation quickswitch area)",
+        "fun isEdgeGesture(dx: Float, dy: Float): Boolean returns true when abs(dx) > abs(dy) and abs(dx) > touchSlop so vertical swipes at the edge are not treated as back",
+        "All pure functions (no Compose, no Context) so they can be unit-tested",
         "Typecheck passes",
-        "Verify in browser using dev-browser skill"
+        "Tests pass"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "SystemStateProvider.toggleWifi calls WifiManager.setWifiEnabled on pre-Q; falls back to Settings.Panel.ACTION_WIFI on Q+. WIFI_STATE_CHANGED broadcast uses EXTRA_WIFI_STATE to sync tile. QSTileManager registered as Koin single. Build passes."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-003",
-      "title": "Airplane Mode tile toggles airplane mode",
-      "description": "As a user, I want to tap the Airplane Mode tile and have airplane mode actually turn on/off, with the tile reflecting the current state.",
+      "title": "GestureHandler state machine and validation",
+      "description": "As the navigation overlay, I need a stateful component that tracks an in-flight gesture from touch-down through move to release, validates it over time, and emits state + progress so a visual affordance and a key-event action can react.",
       "acceptanceCriteria": [
-        "Tapping Airplane Mode tile writes to Settings.Global.AIRPLANE_MODE_ON and broadcasts Intent.ACTION_AIRPLANE_MODE_CHANGED",
-        "Tile active/inactive state updates from broadcast receiver",
-        "Tile state matches Settings.Global.AIRPLANE_MODE_ON on every shade open",
-        "Typecheck passes"
+        "navigation/GestureHandler.kt created with class GestureHandler taking an onAction: (GestureType) -> Unit callback in its constructor",
+        "Expose StateFlow<GestureSession?> for the current session (null when GONE) so Compose can collectAsState",
+        "Exposes StateFlow<GestureType?> describing the gesture being tracked for the visual affordance to render the correct arrow direction",
+        "fun onDown(x, y, displayWidth, displayHeight): checks detectZone + isExcluded; if valid edge, sets session zone and state=ENTRY; rejects when gesture nav mode is off",
+        "fun onMove(dx, dy, totalX, totalY): transitions ENTRY\u2192ACTIVE once drag passes static threshold; sets INACTIVE when user drags back past start; computes progress 0..1 for the back indicator; cancels on multi-touch (tracked outside)",
+        "fun onUp(): ACTIVE session past threshold \u2192 COMMITTED + emits GestureType.BACK via onAction; INACTIVE session \u2192 CANCELLED; then resets to GONE after a short delay",
+        "Long-press guard: a handler posts a 250 ms runnable on down; if no move has occurred by then the session is cancelled (mirrors AOS LONG_PRESS_TIMEOUT logic)",
+        "Bottom-zone gestures (HOME/RECENTS) are detected in onUp by swipe distance (>80dp \u2192 HOME, >150dp with hold \u2192 RECENTS) and emitted via onAction",
+        "Reads Settings.Secure.NAVIGATION_MODE on construction and refreshes on configuration change; guards edge handling to mode==2 (gesture)",
+        "Typecheck passes",
+        "Tests pass",
+        "Tests pass"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "toggleAirplaneMode writes Settings.Global.AIRPLANE_MODE_ON + broadcasts ACTION_AIRPLANE_MODE_CHANGED; on SecurityException falls back to ACTION_AIRPLANE_MODE_SETTINGS (mirrors US-002 Ui-Fi graceful fallback). Receiver syncs _airplaneModeEnabled live via ACTION_AIRPLANE_MODE_CHANGED (AC2). Added refreshTileState() re-reading airplane/auto-rotate/battery-saver/DND/bt/wifi from platform, wired into ShadeCoreStartable.ensureShadeWindow() for every-shade-open sync (AC3). Build passes."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-004",
-      "title": "Auto-Rotate tile toggles rotation lock",
-      "description": "As a user, I want to tap the Auto-Rotate tile to lock/unlock screen rotation, and have the tile show the actual state.",
+      "title": "Register GestureHandler in Koin as a singleton",
+      "description": "As the app, I want GestureHandler to be a process-wide singleton so its state survives shade close/reopen and so both the Compose view and the startable can obtain the same instance.",
       "acceptanceCriteria": [
-        "Tapping Auto-Rotate tile writes to Settings.System.ACCELEROMETER_ROTATION",
-        "Tile visual state matches Settings.System.ACCELEROMETER_ROTATION (0 = locked = inactive, 1 = auto-rotate = active)",
-        "Actual device rotation behavior changes after toggling",
-        "Tile state updates via ContentObserver on Settings.System.ACCELEROMETER_ROTATION to detect external changes",
-        "Typecheck passes"
+        "di/SystemUIModule.kt adds single { GestureHandler { gesture -> /* default no-op; wired by startable */ } } or a factory; if a constructor arg is needed, provide a lambda default",
+        "The GestureHandler instance is retrievable via GlobalContext.get().get<GestureHandler>() (matching existing pattern)",
+        "No existing singletons are removed or modified",
+        "App builds \u2014 all 7 still-passing tests from the qs-tiles feature continue to pass",
+        "Typecheck passes",
+        "Tests pass"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "SystemStateProvider.toggleAutoRotate writes Settings.System.ACCELEROMETER_ROTATION and updates _autoRotateEnabled; autoRotateObserver (ContentObserver) registered in start() and syncs on external changes; ShadeCoreStartable.ensureShadeWindow calls refreshTileState() so the shade re-reads platform state on every open; typecheck passes."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-005",
-      "title": "Bluetooth tile stays in sync with adapter state",
-      "description": "As a user, I want the Bluetooth tile to show the real adapter state at all times and toggle Bluetooth on/off without the tile showing the wrong state afterward.",
+      "title": "Compose spring-animated back-gesture visual affordance (GestureEdgePanel)",
+      "description": "As a user, I want to see an arrow appear at the edge I am dragging from that stretches and fades based on how far I have dragged, giving stock-Android-style feedback that my back gesture is being tracked.",
       "acceptanceCriteria": [
-        "Tapping Bluetooth tile calls BluetoothAdapter.enable() or BluetoothAdapter.disable()",
-        "Tile state updates on BluetoothAdapter.ACTION_STATE_CHANGED, correctly reflecting STATE_TURNING_ON, STATE_ON, STATE_TURNING_OFF, STATE_OFF",
-        "While transition is in flight (STATE_TURNING_ON / STATE_TURNING_OFF), tile shows a distinct in-progress visual and ignores rapid taps",
-        "Tile state matches BluetoothAdapter.getDefaultAdapter().isEnabled on every onResume/shade-open",
+        "navigation/GestureEdgePanel.kt created with @Composable fun GestureEdgePanel(session: GestureSession?, gestureType: GestureType?)",
+        "When session==null or state==GONE the composable renders nothing (zero size so it does not consume touches elsewhere)",
+        "Arrow is drawn with Canvas + drawPath (a chevron: moveTo/lineTo/lineTo) and sits inside a rounded-rect background (drawRoundRect) clipped to the correct edge",
+        "Horizontal edge: arrow points inward (\u2192 from left edge, \u2190 from right edge); arrow vertical position tracks session.startY with a small finger offset; panel height matches screen height",
+        "Arrow length, background width/alpha, and background corner-radius animate with spring(stiffness, dampingRatio) \u2014 distinct target values for ENTRY, ACTIVE, COMMITTED, and CANCELLED states",
+        "Background alpha fades to 0 on COMMITTED/CANCELLED so the panel smoothly disappears after the gesture ends",
+        "Colors read from MaterialTheme so the panel adapts to the system dark/light theme",
+        "The composable is self-contained (no window or lifecycle manipulation) \u2014 it purely renders what the session describes",
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Bluetooth tile syncs via EXTRA_STATE-driven ACTION_STATE_CHANGED handler (STATE_TURNING_ON/OFF tracked into new bluetoothTransitioning flow; settled on STATE_ON/OFF). toggleBluetooth guarded against mid-flight taps; QSTile renders themeColor-tint in-progress visual + disables clicks; refreshTileState re-reads adapter on every shade open. Typecheck passes (07b3b2c)."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-006",
-      "title": "Flashlight tile toggles camera torch",
-      "description": "As a user, I want to tap the Flashlight tile and have the camera torch turn on/off, so I can use my phone as a flashlight directly from the shade.",
+      "title": "Route touches through GestureHandler inside the gesture navigation view",
+      "description": "As the gesture navigation view, I want every pointer event in the bottom/edge zones to flow through GestureHandler so edge swipes trigger back, bottom swipes trigger home, and hold-and-release triggers recents \u2014 and I want GestureEdgePanel overlaid during active back gestures.",
       "acceptanceCriteria": [
-        "Tapping Flashlight tile calls CameraManager.setTorchMode() for the first available camera",
-        "Tile visually reflects on/off state",
-        "Torch state is read on initial start and polled periodically while shade is open if no broadcast is available",
-        "If no torch-capable camera exists, tile is disabled/greyed instead of crashing",
-        "Flashlight state survives brief shade close/reopen (persisted across shade lifecycle)",
-        "Typecheck passes"
+        "ui/navigation/NavigationBarView.kt's GestureNavigationBar is rewritten (or a new GestureNavRoot composable is added) to detect drags on a full-height + edge-aware Box, not just the 24dp bottom strip",
+        "On drag start (onDragStart) call GestureHandler.onDown with the touch coordinates and the current display size so detectZone/isExcluded run",
+        "On each drag delta call GestureHandler.onMove; call GestureHandler.onUp when the drag completes or cancels",
+        "GestureHandler.onAction is wired to the existing sendKeyEvent(4 / 3 / 187) lambdas already passed in from the startable",
+        "GestureEdgePanel is rendered as an overlay positioned at the tracked edge, fed by GestureHandler's StateFlow<GestureSession?>",
+        "Gesture conflict by zone: a touch that starts in LEFT_EDGE or RIGHT_EDGE is locked to BACK for its lifetime (even if the finger later sweeps into the bottom region); a touch that starts in the BOTTOM zone cannot become BACK",
+        "Existing THREE_BUTTON mode in the same file is untouched \u2014 branches only on navigationMode as before",
+        "Typecheck passes",
+        "Verify on device using install.sh: flash build and perform edge / bottom swipes to confirm back/home/recents fire"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "detectTorchCamera() filters cameras by FLASH_INFO_AVAILABLE+LENS_FACING_BACK/EXTERNAL; CameraManager.TorchCallback drives live sync while shade is open; null torch state => _flashlightAvailable=false disables tile (grey bg, non-clickable). State lives in Koin singleton scope so persists across shade close/reopen. Build passes."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-007",
-      "title": "DND tile suppresses notifications end-to-end",
-      "description": "As a user, I want to enable DND from the Quick Settings tile and have the system actually suppress notification sounds, vibrations, and visual interruptions.",
+      "title": "Resize and re-flag the gesture nav overlay window + wire rotation",
+      "description": "As the startable, I need the gesture overlay to cover the full screen height with the right WindowManager flags so edge touches reach our Compose layer, and the handler must be re-created or reset on rotation.",
       "acceptanceCriteria": [
-        "Tapping DND tile calls NotificationManager.setInterruptionFilter(INTERRUPTION_FILTER_NONE or INTERRUPTION_FILTER_ALARMS/PRIORITY) and updates Settings.Global.ZEN_MODE",
-        "When DND is ON, SystemNotificationListenerService respects the interruption filter and does not alert new notifications visibly",
-        "Tapping again disables DND: setInterruptionFilter(INTERRUPTION_FILTER_ALL), ZEN_MODE = OFF",
-        "Tile state updates on android.settings.ZEN_MODE_CHANGED",
-        "NotificationManager.getNotificationPolicy() reflects DND state",
-        "Typecheck passes"
+        "core/NavigationBarCoreStartable.kt's initNavBarWindow(): when navigationMode==GESTURES, the overlay window uses FLAG_NOT_TOUCHABLE=absent and FLAG_LAYOUT_IN_SCREEN so touches in the edge strip reach the Compose pointerInput; keeps FLAG_NOT_FOCUSABLE so the IME is unaffected",
+        "Window height for gesture mode remains match_parent width; height is at least the bottom nav height so existing bottom bar still shows, plus the pointerInput layer extends to the screen edges via Box(matchParentSize) in Compose",
+        "GestureHandler singleton (from Koin) is obtained once and passed into the Compose tree; its onAction lambdas are wired to sendKeyEvent(4/3/187) and screen-display info is refreshed (display size) in onConfigurationChanged override",
+        "onConfigurationChanged(newConfig) is implemented to update the handler's display size and reset the current session so a gesture in flight during rotation does not mis-fire",
+        "When navigationMode flips to/from GESTURES at runtime (Settings.Secure.NAVIGATION_MODE change), a ContentObserver re-reads the mode and the startable toggles between the three-button Compose and the gesture Compose (minimal: read mode once on start and log a TODO if it changes \u2014 full live handling is a stretch, AC3 satisfied by re-reading on configuration change)",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify on device using install.sh: rotate device and confirm gestures still fire on the correct edge; toggle nav mode in Settings and confirm the navbar switches between 3-button and gesture mode"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "SystemStateProvider.toggleDnd now drives a 4-phase cycle OFF→PRIORITY→ALARMS→NONE→OFF via NotificationManager.setInterruptionFilter (canonical API) + ZEN_MODE writes for backward consumers; tile flow updates from existing ZEN_MODE_CHANGED receiver. NotificationListenerService.onNotificationPosted suppresses visible alerts when currentInterruptionFilter != INTERRUPTION_FILTER_ALL (AC2). getNotificationPolicy() reads live policy for AC5. Build passes."
-    },
-    {
-      "id": "US-008",
-      "title": "Battery Saver tile reflects state and opens settings",
-      "description": "As a user, I want the Battery Saver tile to reflect power-save mode accurately and tapping it opens battery settings so I can manage the feature.",
-      "acceptanceCriteria": [
-        "Tile reads current state via PowerManager.isPowerSaveMode and visually reflects it",
-        "Tapping the tile opens Intent.ACTION_POWER_SUMMARY (battery settings) — correct fallback when direct toggle is unavailable",
-        "If platform signature + WRITE_SECURE_SETTINGS allows, tile calls PowerManager.setPowerSaveMode() and falls back to settings intent if denied",
-        "Tile is never a silent no-op — tapping always produces observable change",
-        "Typecheck passes"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "batterySaverEnabled StateFlow already wired; replaced no-op toggle with real PowerManager.setPowerSaveModeEnabled() (reflective @SystemAPI call, falls back to ACTION_BATTERY_SAVER_SETTINGS intent on any failure). Added ACTION_POWER_SAVE_MODE_CHANGED receiver registration + handler for live sync. Tile rendered in NotificationShade with Icons.Filled.BatterySaver; grid rebalanced to 2x4. material-icons-extended dep added in app/build.gradle.kts. Compile passes."
-    },
-    {
-      "id": "US-009",
-      "title": "Screen Recording tile starts/stops a real MediaProjection session",
-      "description": "As a user, I want to tap the Screen Recording tile and have the phone start recording the screen and stop when I tap again, with the recording saved to storage.",
-      "acceptanceCriteria": [
-        "Tapping Screen Recording tile launches MediaProjectionManager.createScreenCaptureIntent() and stores the resulting MediaProjection token after consent",
-        "After user grants consent, tile starts a MediaRecorder writing to Movies/ScreenRecordings/ via MediaStore",
-        "Tile visually reflects recording state (active/animated)",
-        "Tapping again stops the recorder, releases MediaProjection, and finalizes the file",
-        "Tile is disabled/inactive until recording successfully starts (handles deny from permission dialog)",
-        "File is playable from the gallery/files app after recording stops",
-        "Handles runtime permissions for RECORD_AUDIO, POST_NOTIFICATIONS, and scoped storage",
-        "If permission flow is cancelled, tile returns to inactive and logs the event",
-        "Typecheck passes"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "ScreenRecorderController (Koin singleton) owns the live MediaProjection session and writes H264/MPEG-4 video (+ optional AAC via MIC) to Movies/ScreenRecordings/ through MediaStore with IS_PENDING toggle so the file is playable from gallery after stop. ScreenRecorderActivity (no-UI translucent trampoline) drives createScreenCaptureIntent() consent dialog; on grant the controller builds MediaRecorder + VirtualDisplay pipeline, on deny/cancel it keeps _isRecording=false and logs (AC5/AC8). Tile renders a pulsing red recording dot (US-009 AC3); tile stays inactive until recording succeeds. Handles RECORD_AUDIO + POST_NOTIFICATIONS runtime perms (degrades to video-only when mic denied) and scoped storage via MediaStore RELATIVE_PATH. screenRecording StateFlow in SystemStateProvider delegates to controller so flag survives shade close/reopen. Compile passes — committed at bd134e8."
-    },
-    {
-      "id": "US-010",
-      "title": "Each tile shows a correct, meaningful icon",
-      "description": "As a user, I want each QS tile to display a recognizable icon so I can scan the grid quickly.",
-      "acceptanceCriteria": [
-        "Wi-Fi tile shows a Wi-Fi signal icon",
-        "Bluetooth tile shows a bluetooth icon",
-        "DND tile shows a do-not-disturb / bell-slash icon",
-        "Flashlight tile shows a flashlight/torch icon",
-        "Airplane Mode tile shows an airplane icon",
-        "Auto-Rotate tile shows a phone-with-rotation-arrows icon",
-        "Battery Saver tile shows a battery-with-leaf icon",
-        "Screen Recording tile shows a record/filled-circle icon",
-        "Icons come from Material Icons or from ~/android-os/SystemUI/res/drawable/ vector assets (AOSP-licensed)",
-        "Icons render correctly in both active and inactive tile states with contrast",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": " US-010 completed in final iteration — per-tile Material Icons wired through QSTile icon selector; committed as de82e8b."
+      "passes": false,
+      "notes": ""
     }
   ]
 }

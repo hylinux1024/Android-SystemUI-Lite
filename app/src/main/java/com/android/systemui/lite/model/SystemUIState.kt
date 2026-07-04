@@ -141,3 +141,34 @@ enum class QSPanelTab {
     MEDIA,
     INFO
 }
+
+enum class GestureState {
+    GONE,
+    ENTRY,
+    ACTIVE,
+    INACTIVE,
+    COMMITTED,
+    CANCELLED
+}
+
+enum class TouchZone {
+    LEFT_EDGE,
+    RIGHT_EDGE,
+    BOTTOM,
+    NONE
+}
+
+enum class GestureType {
+    BACK,
+    HOME,
+    RECENTS
+}
+
+data class GestureSession(
+    val zone: TouchZone,
+    val startX: Float,
+    val startY: Float,
+    val startTimeMs: Long,
+    val state: GestureState,
+    val progress: Float
+)
