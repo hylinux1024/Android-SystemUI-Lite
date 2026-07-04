@@ -27,7 +27,20 @@ val appModule = module {
      * close/reopen and the Compose view and startable can share the same instance.
      * [onAction] defaults to a no-op; the startable wires the real key-event dispatch.
      */
-    single { GestureHandler(onActionInit = { }, context = androidContext()) }
+    single {
+        val ctx = androidContext()
+        val density = ctx.resources.displayMetrics.density
+        // Edge strips are EDGE_STRIP_WIDTH_DP dp wide — pass the same px width to the handler
+        // so the down-classification matches the actual strip the user can touch.
+        GestureHandler(
+            onActionInit = { },
+            context = ctx,
+            edgeWidthPx = 48f * density,
+            homeSwipeDp = 80f,
+            recentsSwipeDp = 150f,
+            density = density
+        )
+    }
 }
 
 fun initKoin(context: Context) {

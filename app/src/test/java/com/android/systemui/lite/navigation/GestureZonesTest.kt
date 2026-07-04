@@ -11,8 +11,8 @@ class GestureZonesTest {
     private val displayWidth = 1080
     private val displayHeight = 2400
     private val edgeWidthPx = 48f
-    // bottomZoneHeightPx = displayHeight * 0.06f = 144f
-    private val bottomZoneHeightPx = 144f
+    // bottomZoneHeightPx = displayHeight * 0.08f = 192f (matches BOTTOM_STRIP_HEIGHT_DP dp strip)
+    private val bottomZoneHeightPx = 192f
 
     // ---- detectZone -------------------------------------------------------
 

@@ -136,6 +136,13 @@ enum class NavigationMode {
     GESTURES
 }
 
+/** Which edge of the screen a gesture overlay window covers. */
+enum class GestureEdge {
+    LEFT,
+    RIGHT,
+    BOTTOM
+}
+
 enum class QSPanelTab {
     TILES,
     MEDIA,

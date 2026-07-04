@@ -12,16 +12,17 @@ import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.android.systemui.lite.CoreStartable
+import com.android.systemui.lite.model.GestureEdge
 import com.android.systemui.lite.model.GestureType
 import com.android.systemui.lite.model.NavigationMode
 import com.android.systemui.lite.navigation.GestureHandler
+import com.android.systemui.lite.ui.navigation.GestureBottomZone
+import com.android.systemui.lite.ui.navigation.GestureEdgeZone
 import com.android.systemui.lite.ui.navigation.NavigationBarView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,16 +33,37 @@ class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
 
     companion object {
         private const val TAG = "NavigationBarCoreStartable"
-        // 2019 = TYPE_NAVIGATION_BAR.
+        // 2019 = TYPE_NAVIGATION_BAR — only ONE window of this type is allowed per process, so it
+        // is used for the three-button bottom strip only.
         @Suppress("DEPRECATION")
         private val TYPE_NAVIGATION_BAR = 2019
+        // 2024 = TYPE_NAVIGATION_BAR_PANEL — AOSP's type for gesture overlay windows. Multiple
+        // windows of this type are allowed, so the three gesture strips each get their own.
+        @Suppress("DEPRECATION")
+        private val TYPE_NAVIGATION_BAR_PANEL = 2024
         private const val SETTINGS_NAVIGATION_MODE = "navigation_mode"
+
+        // Strip geometry — thin enough that the center of the screen stays free for apps.
+        private const val EDGE_STRIP_WIDTH_DP = 48
+        private const val BOTTOM_STRIP_HEIGHT_DP = 60
+        // Bottom ~20% of the left/right edge strips is excluded (rotation hotspot per US-006).
+        private const val EDGE_BOTTOM_EXCLUDE_FRACTION = 0.20f
     }
 
     private val windowHost = WindowHost()
-    private var navBarView: ComposeView? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val wm by lazy { context.getSystemService(Context.WINDOW_SERVICE) as WindowManager }
+
+    /** Recents panel overlay — shows our own recents UI instead of the launcher's empty shell. */
+    private val recentsCoreStartable: RecentsCoreStartable? by lazy {
+        try {
+            com.android.systemui.lite.SystemUIApplication.instance
+                .getStartable(RecentsCoreStartable::class.java)
+        } catch (e: Exception) {
+            Log.w(TAG, "RecentsCoreStartable not available: ${e.message}")
+            null
+        }
+    }
 
     /** Process-wide gesture state machine from Koin (US-007 AC3). Wired by [wireHandlerAction]. */
     private val gestureHandler: GestureHandler = GlobalContext.get().get()
@@ -53,8 +75,14 @@ class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
     private val _mode = MutableStateFlow(detectNavigationMode())
     private val mode: StateFlow<NavigationMode> = _mode.asStateFlow()
 
-    /** Mutable layout params reused across [applyNavigationMode] via [WindowManager.updateViewLayout]. */
-    private var layoutParams = newLayoutParams(NavigationMode.THREE_BUTTON)
+    // THREE_BUTTON mode: single bottom ComposeView hosting the three-button bar.
+    private var threeButtonView: ComposeView? = null
+
+    // GESTURE mode: three thin strip ComposeViews — left edge, right edge, bottom. Each window
+    // only covers its own band, so touches in the center of the screen fall through to apps.
+    private var leftEdgeView: ComposeView? = null
+    private var rightEdgeView: ComposeView? = null
+    private var bottomZoneView: ComposeView? = null
 
     private var navModeObserver: ContentObserver? = null
 
@@ -62,7 +90,6 @@ class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
         Log.d(TAG, "Starting NavigationBarCoreStartable...")
         windowHost.start()
         wireHandlerAction()
-        initNavBarWindow()
         applyNavigationMode(mode.value, reshapeWindow = true)
         registerNavModeObserver()
         Log.d(TAG, "NavigationBarCoreStartable started")
@@ -75,10 +102,29 @@ class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
             when (gesture) {
                 GestureType.BACK -> sendKeyEvent(4)
                 GestureType.HOME -> sendKeyEvent(3)
-                GestureType.RECENTS -> sendKeyEvent(187)
+                GestureType.RECENTS -> launchRecents()
             }
         }
     }
+
+    /**
+     * Open the recents (recent apps) UI. We show our own [RecentsCoreStartable] overlay panel
+     * instead of the launcher's RecentsActivity — the launcher activity opens as an empty shell
+     * when launched directly because AOSP's recents card pipeline (OverviewProxyService →
+     * IOverviewProxy → RecentsImplementation) only runs when the real SystemUI drives it.
+     */
+    private fun launchRecents() {
+        val panel = recentsCoreStartable
+        if (panel != null) {
+            Log.d(TAG, "showing recents panel")
+            panel.showRecents()
+        } else {
+            Log.w(TAG, "RecentsCoreStartable unavailable — falling back to KEYCODE_RECENTS")
+            sendKeyEvent(187)
+        }
+    }
+
+
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         // US-007 AC4 — refresh geometry, cancel any in-flight gesture, then honor a possible
@@ -94,67 +140,121 @@ class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
 
     override fun stop() {
         unregisterNavModeObserver()
-        navBarView?.let { view ->
-            try {
-                wm.removeView(view)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error removing nav bar window: ${e.message}")
-            }
-        }
-        navBarView = null
+        removeViewSafely(threeButtonView)
+        threeButtonView = null
+        removeViewSafely(leftEdgeView)
+        leftEdgeView = null
+        removeViewSafely(rightEdgeView)
+        rightEdgeView = null
+        removeViewSafely(bottomZoneView)
+        bottomZoneView = null
         windowHost.destroy()
     }
 
-    /** Create the single persistent ComposeView once; content switches reactively via [mode]. */
-    private fun initNavBarWindow() {
-        val dm = context.resources.displayMetrics
-        navBarView = ComposeView(context).apply {
-            setViewTreeLifecycleOwner(windowHost)
-            setViewTreeViewModelStoreOwner(windowHost)
-            setViewTreeSavedStateRegistryOwner(windowHost)
-
-            setContent {
-                MaterialTheme {
-                    val currentMode by mode.collectAsState()
-                    NavigationBarView(
-                        themeColor = androidx.compose.ui.graphics.Color(0xFF00ADB5),
-                        navigationMode = currentMode,
-                        handler = gestureHandler,
-                        onBack = { sendKeyEvent(4) },
-                        onHome = { sendKeyEvent(3) },
-                        onRecents = { sendKeyEvent(187) }
-                    )
-                }
+    private fun removeViewSafely(view: ComposeView?) {
+        view?.let { v ->
+            try {
+                wm.removeView(v)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error removing window: ${e.message}")
             }
         }
     }
 
     /**
-     * Set the live [Mode] reshaping the persistent window in place via
-     * [WindowManager.updateViewLayout] (US-007 AC1 + AC2). The Compose tree observes [mode] and
-     * flips between the three-button strip and the gesture root without a window re-add.
+     * Switch between the three-button bottom strip and the three-strip gesture overlay. Each mode
+     * tears down the other's windows so only one set is attached at a time.
      */
-    private fun applyNavigationMode(mode: NavigationMode, reshapeWindow: Boolean) {
-        val changed = mode != _mode.value
-        _mode.value = mode
+    private fun applyNavigationMode(newMode: NavigationMode, reshapeWindow: Boolean) {
+        val changed = newMode != _mode.value
+        _mode.value = newMode
         if (!reshapeWindow) return
 
-        layoutParams = newLayoutParams(mode)
-        navBarView?.let { view ->
-            try {
-                wm.updateViewLayout(view, layoutParams)
-                Log.d(TAG, "NavigationBar window reshaped (mode=$mode, flags=${layoutParams.flags})")
-            } catch (e: IllegalArgumentException) {
-                // view not attached yet (very first apply before addView) — add it.
-                safeAddView(view)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error updating nav bar window: ${e.message}")
+        when (newMode) {
+            NavigationMode.THREE_BUTTON -> {
+                // Tear down gesture strip windows.
+                removeViewSafely(leftEdgeView); leftEdgeView = null
+                removeViewSafely(rightEdgeView); rightEdgeView = null
+                removeViewSafely(bottomZoneView); bottomZoneView = null
+                // Create (or reshape) the three-button bottom strip.
+                if (threeButtonView == null) {
+                    threeButtonView = createThreeButtonView()
+                    safeAddView(threeButtonView!!, threeButtonParams())
+                } else {
+                    safeUpdateView(threeButtonView!!, threeButtonParams())
+                }
+            }
+            NavigationMode.GESTURES -> {
+                // Tear down the three-button strip.
+                removeViewSafely(threeButtonView); threeButtonView = null
+                // Create (or reshape) the three gesture strip windows.
+                val dm = context.resources.displayMetrics
+                val screenW = dm.widthPixels
+                val screenH = dm.heightPixels
+                if (leftEdgeView == null) {
+                    leftEdgeView = createEdgeZoneView(GestureEdge.LEFT, screenW, screenH)
+                    rightEdgeView = createEdgeZoneView(GestureEdge.RIGHT, screenW, screenH)
+                    bottomZoneView = createBottomZoneView(screenW, screenH)
+                    safeAddView(leftEdgeView!!, edgeParams(isLeft = true))
+                    safeAddView(rightEdgeView!!, edgeParams(isLeft = false))
+                    safeAddView(bottomZoneView!!, bottomZoneParams())
+                } else {
+                    safeUpdateView(leftEdgeView!!, edgeParams(isLeft = true))
+                    safeUpdateView(rightEdgeView!!, edgeParams(isLeft = false))
+                    safeUpdateView(bottomZoneView!!, bottomZoneParams())
+                }
+            }
+        }
+        Log.d(TAG, "NavigationBar windows reshaped (mode=$newMode)")
+    }
+
+    // --- View factories ---
+
+    private fun createThreeButtonView(): ComposeView = ComposeView(context).apply {
+        setViewTreeLifecycleOwner(windowHost)
+        setViewTreeViewModelStoreOwner(windowHost)
+        setViewTreeSavedStateRegistryOwner(windowHost)
+        setContent {
+            MaterialTheme {
+                NavigationBarView(
+                    themeColor = androidx.compose.ui.graphics.Color(0xFF00ADB5),
+                    navigationMode = NavigationMode.THREE_BUTTON,
+                    handler = gestureHandler,
+                    onBack = { sendKeyEvent(4) },
+                    onHome = { sendKeyEvent(3) },
+                    onRecents = { launchRecents() }
+                )
             }
         }
     }
 
-    /** US-007 AC1 + AC2: size and flag window spec per navigation mode. */
-    private fun newLayoutParams(mode: NavigationMode): WindowManager.LayoutParams {
+    private fun createEdgeZoneView(edge: GestureEdge, screenW: Int, screenH: Int): ComposeView =
+        ComposeView(context).apply {
+            setViewTreeLifecycleOwner(windowHost)
+            setViewTreeViewModelStoreOwner(windowHost)
+            setViewTreeSavedStateRegistryOwner(windowHost)
+            setContent {
+                MaterialTheme {
+                    GestureEdgeZone(gestureHandler, edge, screenW, screenH)
+                }
+            }
+        }
+
+    private fun createBottomZoneView(screenW: Int, screenH: Int): ComposeView =
+        ComposeView(context).apply {
+            setViewTreeLifecycleOwner(windowHost)
+            setViewTreeViewModelStoreOwner(windowHost)
+            setViewTreeSavedStateRegistryOwner(windowHost)
+            setContent {
+                MaterialTheme {
+                    GestureBottomZone(gestureHandler, screenW, screenH)
+                }
+            }
+        }
+
+    // --- Layout params ---
+
+    private fun threeButtonParams(): WindowManager.LayoutParams {
         val navBarHeight = getNavigationBarHeightPx()
         return WindowManager.LayoutParams().apply {
             @Suppress("DEPRECATION")
@@ -163,37 +263,81 @@ class NavigationBarCoreStartable(private val context: Context) : CoreStartable {
             setTitle("NavigationBar")
             packageName = context.packageName
             setFitInsetsTypes(0)
-            when (mode) {
-                NavigationMode.GESTURES -> {
-                    width = WindowManager.LayoutParams.MATCH_PARENT
-                    height = WindowManager.LayoutParams.MATCH_PARENT
-                    gravity = Gravity.TOP
-                    // NOT_TOUCHABLE ABSENT so edge/bottom swipes reach Compose pointerInput;
-                    // LAYOUT_IN_SCREEN so the window spans the display; NOT_FOCUSABLE KEPT so the
-                    // IME is unaffected.
-                    flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                }
-                NavigationMode.THREE_BUTTON -> {
-                    width = WindowManager.LayoutParams.MATCH_PARENT
-                    height = navBarHeight
-                    gravity = Gravity.BOTTOM
-                    // Touchable bottom strip only; NOT_TOUCHABLE would also drop the buttons, so we
-                    // keep the original flags. The strip occupies only navBarHeight, so app touches
-                    // elsewhere fall through to windows below.
-                    flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                            WindowManager.LayoutParams.FLAG_SPLIT_TOUCH
-                }
-            }
+            width = WindowManager.LayoutParams.MATCH_PARENT
+            height = navBarHeight
+            gravity = Gravity.BOTTOM
+            // Touchable bottom strip only; NOT_TOUCHABLE would also drop the buttons, so we
+            // keep the original flags. The strip occupies only navBarHeight, so app touches
+            // elsewhere fall through to windows below.
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_SPLIT_TOUCH
         }
     }
 
-    private fun safeAddView(view: ComposeView) {
+    private fun edgeParams(isLeft: Boolean): WindowManager.LayoutParams {
+        val dm = context.resources.displayMetrics
+        val edgeWidthPx = (EDGE_STRIP_WIDTH_DP * dm.density).toInt()
+        val screenH = dm.heightPixels
+        // Exclude the bottom ~20% so the rotation hotspot stays in the app's domain.
+        val stripHeight = (screenH * (1f - EDGE_BOTTOM_EXCLUDE_FRACTION)).toInt()
+        return WindowManager.LayoutParams().apply {
+            @Suppress("DEPRECATION")
+            type = TYPE_NAVIGATION_BAR_PANEL
+            format = PixelFormat.TRANSLUCENT
+            setTitle(if (isLeft) "GestureEdgeLeft" else "GestureEdgeRight")
+            packageName = context.packageName
+            setFitInsetsTypes(0)
+            width = edgeWidthPx
+            height = stripHeight
+            x = 0
+            y = 0
+            gravity = if (isLeft) Gravity.LEFT or Gravity.TOP else Gravity.RIGHT or Gravity.TOP
+            // NOT_FOCUSABLE: don't steal IME. NOT_TOUCH_MODAL: touches outside this window's
+            // bounds (i.e. everywhere except the 48dp strip) keep going to windows below.
+            // FLAG_LAYOUT_IN_SCREEN: span the display. NO NOT_TOUCHABLE — the strip itself must
+            // receive drags for the gesture detector.
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        }
+    }
+
+    private fun bottomZoneParams(): WindowManager.LayoutParams {
+        val dm = context.resources.displayMetrics
+        val stripHeightPx = (BOTTOM_STRIP_HEIGHT_DP * dm.density).toInt()
+        return WindowManager.LayoutParams().apply {
+            @Suppress("DEPRECATION")
+            type = TYPE_NAVIGATION_BAR_PANEL
+            format = PixelFormat.TRANSLUCENT
+            setTitle("GestureBottom")
+            packageName = context.packageName
+            setFitInsetsTypes(0)
+            width = WindowManager.LayoutParams.MATCH_PARENT
+            height = stripHeightPx
+            gravity = Gravity.BOTTOM
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        }
+    }
+
+    private fun safeAddView(view: ComposeView, params: WindowManager.LayoutParams) {
         try {
-            wm.addView(view, layoutParams)
-            Log.d(TAG, "NavigationBar window added (mode=${mode.value}, flags=${layoutParams.flags})")
+            wm.addView(view, params)
+            Log.d(TAG, "Window added (title=${params.title}, flags=${params.flags})")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to add nav bar window: ${e.message}")
+            Log.e(TAG, "Failed to add window ${params.title}: ${e.message}")
+        }
+    }
+
+    private fun safeUpdateView(view: ComposeView, params: WindowManager.LayoutParams) {
+        try {
+            wm.updateViewLayout(view, params)
+        } catch (e: IllegalArgumentException) {
+            // View not attached — add it.
+            safeAddView(view, params)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update window ${params.title}: ${e.message}")
         }
     }
 

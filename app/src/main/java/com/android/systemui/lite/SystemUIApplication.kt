@@ -8,6 +8,7 @@ import android.util.Log
 import com.android.systemui.lite.CoreStartable
 import com.android.systemui.lite.core.GlobalActionsCoreStartable
 import com.android.systemui.lite.core.NavigationBarCoreStartable
+import com.android.systemui.lite.core.RecentsCoreStartable
 import com.android.systemui.lite.core.ShadeCoreStartable
 import com.android.systemui.lite.core.StatusBarCoreStartable
 import com.android.systemui.lite.di.initKoin
@@ -93,6 +94,8 @@ class SystemUIApplication : Application() {
         registerStartable(NavigationBarCoreStartable::class.java, NavigationBarCoreStartable(this))
 
         registerStartable(GlobalActionsCoreStartable::class.java, GlobalActionsCoreStartable(this))
+
+        registerStartable(RecentsCoreStartable::class.java, RecentsCoreStartable(this))
 
         val sorted = startables.toSortedMap(compareBy { it.name })
         sorted.forEach { (cls, startable) ->

@@ -7,6 +7,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -69,10 +71,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -131,52 +133,73 @@ fun NotificationShade(
     modifier: Modifier = Modifier
 ) {
     val lazyListState = rememberLazyListState()
-    var accumCloseY by remember { mutableFloatStateOf(0f) }
     var viewHeightPx by remember { mutableFloatStateOf(0f) }
-
-    val shadeCloseConnection = remember(lazyListState) {
-        object : NestedScrollConnection {
-            private fun isAtTop() = lazyListState.firstVisibleItemIndex == 0 && lazyListState.firstVisibleItemScrollOffset == 0
-
-            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                if (available.y < 0 && isAtTop()) {
-                    accumCloseY += -available.y
-                    if (viewHeightPx > 0f) {
-                        val progress = (1f - accumCloseY / viewHeightPx).coerceIn(0f, 1f)
-                        onDragShade?.invoke(progress)
-                    }
-                    return androidx.compose.ui.geometry.Offset(0f, available.y)
-                }
-                if (available.y > 0) {
-                    accumCloseY = (accumCloseY - available.y).coerceAtLeast(0f)
-                    if (viewHeightPx > 0f && accumCloseY > 0f) {
-                        val progress = (1f - accumCloseY / viewHeightPx).coerceIn(0f, 1f)
-                        onDragShade?.invoke(progress)
-                    }
-                }
-                return androidx.compose.ui.geometry.Offset.Zero
-            }
-
-            override suspend fun onPreFling(available: Velocity): Velocity {
-                if (available.y < 0 && accumCloseY > 120f) {
-                    onCloseShade()
-                    accumCloseY = 0f
-                    return available
-                }
-                onOpenShade?.invoke()
-                accumCloseY = 0f
-                return Velocity.Zero
-            }
-        }
-    }
+    val cleanNotifs = notifications.filter { it.type != NotificationType.MUSIC }
+    // Touch slop used by the swipe-up-to-close detector below. Captured here (not
+    // inside the suspend block) so the Modifier chain stays outside the recomposer.
+    val touchSlop = LocalViewConfiguration.current.touchSlop
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { viewHeightPx = it.height.toFloat() }
             .background(Color.Black.copy(alpha = 0.92f))
+            .pointerInput(Unit) {
+                // Manual swipe-up-to-close detector running on the Initial pass
+                // (parent-first), exactly like AOSP's NotificationPanelViewController
+                // TouchHandler.onInterceptTouchEvent: the panel wins the gesture away
+                // from children (LazyColumn, QS-tile scrollable, empty-state scrollable)
+                // once an upward drag past touch slop begins while the panel is
+                // collapsible — i.e. the list is scrolled to top OR the list is empty.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    var prevTimeMs = down.uptimeMillis
+                    var prevY = down.position.y
+                    var totalDragY = 0f
+                    var armed = false
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        // Find the change for our pointer without a lambda predicate so the
+                        // compiler can infer the type unambiguously.
+                        var change: PointerInputChange? = null
+                        for (c in event.changes) {
+                            if (c.id == down.id) { change = c; break }
+                        }
+                        val current = change ?: break
+                        if (!current.pressed) {
+                            if (armed && viewHeightPx > 0f) {
+                                val progress = (1f + totalDragY / viewHeightPx).coerceIn(0f, 1f)
+                                val dtMs = (current.uptimeMillis - prevTimeMs).coerceAtLeast(1)
+                                val velocityY = (current.position.y - prevY) / dtMs * 1000f
+                                if (progress < 0.6f || velocityY < -600f) onCloseShade()
+                                else onOpenShade?.invoke()
+                            }
+                            break
+                        }
+                        // Compose 1.7.x has no public positionChange(); compute the per-event
+                        // delta manually from the previous position. This is exactly what
+                        // positionChange() returns in newer Compose versions.
+                        val dy = current.position.y - prevY
+                        prevTimeMs = current.uptimeMillis
+                        prevY = current.position.y
+                        totalDragY += dy
+                        val contentAtTop = lazyListState.firstVisibleItemIndex == 0 &&
+                            lazyListState.firstVisibleItemScrollOffset == 0
+                        if (!armed && totalDragY < -touchSlop &&
+                            (contentAtTop || cleanNotifs.isEmpty())) {
+                            armed = true
+                        }
+                        if (armed) {
+                            current.consume()
+                            if (viewHeightPx > 0f) {
+                                val progress = (1f + totalDragY / viewHeightPx).coerceIn(0f, 1f)
+                                onDragShade?.invoke(progress)
+                            }
+                        }
+                    }
+                }
+            }
             .padding(top = (statusBarHeightDp + 16).dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
-            .nestedScroll(shadeCloseConnection)
     ) {
         Box(Modifier.scrollable(rememberScrollState(), Orientation.Vertical)) {
             Column {
@@ -264,7 +287,6 @@ fun NotificationShade(
         Spacer(Modifier.height(6.dp))
 
         Box(Modifier.weight(1f)) {
-            val cleanNotifs = notifications.filter { it.type != NotificationType.MUSIC }
             if (cleanNotifs.isEmpty()) {
                 Box(
                     Modifier

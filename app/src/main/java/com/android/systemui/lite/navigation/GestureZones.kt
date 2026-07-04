@@ -15,8 +15,10 @@ import kotlin.math.abs
 object GestureZones {
 
     /** Bottom band of the screen, expressed as a fraction of display height. Touches at
-     *  the very bottom belong to the home/recents swipe zone rather than content. */
-    private const val BOTTOM_ZONE_FRACTION = 0.06f
+     *  the very bottom belong to the home/recents swipe zone rather than content.
+     *  Must be >= the actual bottom strip height (BOTTOM_STRIP_HEIGHT_DP dp) so every touch
+     *  inside the strip is classified as BOTTOM — otherwise the strip's top portion is dead. */
+    private const val BOTTOM_ZONE_FRACTION = 0.08f
 
     /** Right-edge strip used by [isExcluded] to recognise the rotation quick-switch area. */
     private const val EXCLUSION_EDGE_WIDTH_PX = 48f

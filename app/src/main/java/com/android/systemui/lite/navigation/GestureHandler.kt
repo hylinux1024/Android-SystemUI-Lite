@@ -174,7 +174,13 @@ class GestureHandler(
         totalDragY += dy
         _session.value = when (current.zone) {
             TouchZone.LEFT_EDGE, TouchZone.RIGHT_EDGE -> handleEdgeMove(current, totalX)
-            else -> current // bottom-zone moves are ignored until release
+            TouchZone.BOTTOM -> {
+                // Leave ENTRY on first move so the long-press guard (which checks
+                // state == ENTRY) cannot cancel the session before onUp runs.
+                if (current.state == GestureState.ENTRY) current.copy(state = GestureState.ACTIVE)
+                else current
+            }
+            else -> current
         }
     }
 
