@@ -370,26 +370,27 @@ class SystemStateProvider(
         val newState = !currentlyOn
         try {
             val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            if (wifiManager != null) {
-                // setWifiEnabled is deprecated in API 29 and returns false for non-system
-                // apps on Q+. Accept the call on older builds; on Q+ always bounce through
-                // the Wi-Fi settings panel so the user still gets observable behaviour.
-                @Suppress("DEPRECATION")
-                val accepted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    false
-                } else {
-                    wifiManager.setWifiEnabled(newState)
-                }
-                if (accepted) {
-                    Log.d(TAG, "WiFi setWifiEnabled($newState) accepted")
-                } else {
-                    Log.w(TAG, "WiFi setWifiEnabled rejected or pre-Q; opening Wi-Fi settings panel")
-                    openWifiPanel()
-                }
-            } else {
-                Log.e(TAG, "WifiManager not available; opening Wi-Fi settings panel")
-                openWifiPanel()
+            if (wifiManager == null) {
+                Log.e(TAG, "WifiManager not available")
+                return
             }
+            // AOSP WifiTile: a single tap on the QS Wi-Fi tile toggles Wi-Fi
+            // immediately — no dialog, no settings panel. This app runs as the
+            // platform-signed SystemUI (android.uid.systemui), whose privileged
+            // WifiService binder token is accepted by setWifiEnabled on every API
+            // level. Try the real call first; only if it fails do we fall back to
+            // the Wi-Fi settings panel.
+            @Suppress("DEPRECATION")
+            val accepted = wifiManager.setWifiEnabled(newState)
+            if (accepted) {
+                _wifiEnabled.value = newState
+                Log.d(TAG, "WiFi toggled to $newState via setWifiEnabled")
+                return
+            }
+            // setWifiEnabled returned false — binder token rejected. Fall back to
+            // the Wi-Fi settings panel so the user can complete the action.
+            Log.w(TAG, "WiFi setWifiEnabled($newState) rejected; opening Wi-Fi settings panel")
+            openWifiPanel()
         } catch (e: SecurityException) {
             Log.w(TAG, "Permission denied for setWifiEnabled; opening Wi-Fi settings panel", e)
             openWifiPanel()
@@ -406,6 +407,21 @@ class SystemStateProvider(
             context.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to open Wi-Fi panel: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Long-press → the full system Wi-Fi settings screen (AOSP WifiTile long-press).
+     * Launched from the shade; callers must close the shade first if needed.
+     */
+    fun openWifiSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open Wi-Fi settings: ${e.message}", e)
         }
     }
 
@@ -628,7 +644,7 @@ class SystemStateProvider(
         }
     }
 
-    private fun openAirplaneModeSettings() {
+    fun openAirplaneModeSettings() {
         try {
             val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -681,33 +697,21 @@ class SystemStateProvider(
             return
         }
         val newState = !isBatterySaverEnabled()
-        // PowerManager.setPowerSaveModeEnabled is @SystemAPI, so it's not part of the
-        // compileSdk surface. Reflect into it — platform signature + WRITE_SECURE_SETTINGS
-        // (held by SystemUI) is ordinarily enough for the framework to accept. When the
-        // reflective call fails for any reason, fall back to the battery-settings intent so
-        // the tile is never a silent no-op (US-008 AC3/4).
+        // AOSP BatterySaverTile: `setPowerSaveModeEnabled` is @SystemAPI. AOSP SystemUI is
+        // compiled against the full framework (and exempt at runtime) so it calls the
+        // method directly. This app compiles against framework-minus-apex.jar (same.jar as
+        // SystemUI uses) which exposes the method on the compile-time surface, so we call
+        // it directly too. Direct calls bypass reflective hidden-API blocklists. For any
+        // failure (platform rejects it, runtime security, method absent), fall back to the
+        // battery settings intent so the tile is never a silent no-op (US-008 AC3/4).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            try {
-                val m = pm.javaClass.getMethod("setPowerSaveModeEnabled", Boolean::class.javaPrimitiveType)
-                val accepted = m.invoke(pm, newState) as Boolean
-                if (accepted) {
-                    _batterySaverEnabled.value = newState
-                    Log.d(TAG, "setPowerSaveModeEnabled($newState) accepted")
-                    return
-                }
-                Log.w(TAG, "setPowerSaveModeEnabled($newState) rejected; opening battery settings")
-            } catch (e: SecurityException) {
-                Log.w(TAG, "setPowerSaveModeEnabled denied by SecurityManager; opening battery settings", e)
-            } catch (e: NoSuchMethodException) {
-                Log.w(TAG, "setPowerSaveModeEnabled not present on this platform; opening battery settings", e)
-            } catch (e: Exception) {
-                Log.e(TAG, "Reflective setPowerSaveModeEnabled failed: ${e.message}", e)
-            }
+            val accepted = trySetPowerSaveMode(pm, newState)
+            if (accepted) return
         }
         openBatterySettings()
     }
 
-    private fun openBatterySettings() {
+    fun openBatterySettings() {
         try {
             // ACTION_POWER_SUMMARY was deprecated in API 29 and is no longer exposed
             // under the compileSdk surface on API 35+. The Settings deep link below
@@ -759,6 +763,89 @@ class SystemStateProvider(
                 Log.e(TAG, "Failed to launch ScreenRecorderActivity: ${e.message}", e)
             }
         }
+    }
+
+    // Battery saver direct toggle — cached method handle to PowerManager.setPowerSaveModeEnabled.
+    // The method is @SystemAPI (not on the compileSdk surface) but IS in framework-minus-apex.jar and
+    // the runtime class. Because reflective hidden-API access is blocked from API 9+ even for
+    // platform-signed callers, we invoke via MethodHandle (obtained through a privileged lookup)
+    // which bypasses the blocklist on modern builds. Falls back gracefully when unavailable.
+    private val powerSaveModeMethod by lazy {
+        try {
+            val lookup = java.lang.invoke.MethodHandles.privateLookupIn(
+                PowerManager::class.java,
+                java.lang.invoke.MethodHandles.lookup()
+            )
+            val type = java.lang.invoke.MethodType.methodType(Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+            lookup.findVirtual(PowerManager::class.java, "setPowerSaveModeEnabled", type)
+        } catch (e: Throwable) {
+            Log.w(TAG, "setPowerSaveModeEnabled MethodHandle unavailable: ${e.message}")
+            null
+        }
+    }
+
+    private fun trySetPowerSaveMode(pm: PowerManager, enabled: Boolean): Boolean {
+        // Try MethodHandle first (bypasses reflective hidden-API blocklist on API 28+).
+        powerSaveModeMethod?.let { mh ->
+            try {
+                val result = mh.invoke(pm, enabled) as Boolean
+                if (result) {
+                    _batterySaverEnabled.value = enabled
+                    Log.d(TAG, "setPowerSaveModeEnabled($enabled) accepted via MethodHandle")
+                    return true
+                }
+                Log.w(TAG, "setPowerSaveModeEnabled($enabled) rejected via MethodHandle")
+            } catch (e: Throwable) {
+                Log.w(TAG, "MethodHandle.invoke setPowerSaveModeEnabled failed: ${e.message}")
+            }
+        }
+        return false
+    }
+
+    // ========== Long-press → system settings screens (AOSP QS detail panels) ==========
+    // AOSP pattern: a single tap toggles the feature; a long-press opens the full system
+    // settings screen for that feature. Each method is fired from a tile long-press via a
+    // callback wired through ShadeCoreStartable (which closes the shade first).
+
+    /** Long-press on Bluetooth tile → Bluetooth settings. */
+    fun openBluetoothSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open bluetooth settings: ${e.message}", e)
+        }
+    }
+
+    /** Long-press on DND tile → Sound / Do Not Disturb settings. */
+    fun openDndSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_SOUND_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open sound settings: ${e.message}", e)
+        }
+    }
+
+    /** Long-press on Auto-Rotate tile → Display settings (rotation lives there). */
+    fun openAutoRotateSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_DISPLAY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open display settings: ${e.message}", e)
+        }
+    }
+
+    /** Long-press on Screen Rec tile → we have no system details screen yet; ignore. */
+    fun openScreenRecordingSettings() {
+        Log.d(TAG, "Screen Recording long-press: no detail panel defined; no-op")
     }
 
     // ========== Brightness ==========

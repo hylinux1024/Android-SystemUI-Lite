@@ -1,9 +1,11 @@
 package com.android.systemui.lite.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
@@ -105,6 +107,16 @@ fun NotificationShade(
     onToggleAutoRotate: () -> Unit,
     onToggleBatterySaver: () -> Unit,
     onToggleScreenRecording: () -> Unit,
+    // Long-press callbacks — each fires after the shade closes. Tiles with no detail
+    // panel pass a no-op lambda from ShadeCoreStartable.
+    onLongPressWifi: () -> Unit = {},
+    onLongPressBluetooth: () -> Unit = {},
+    onLongPressDnd: () -> Unit = {},
+    onLongPressFlashlight: () -> Unit = {},
+    onLongPressAirplaneMode: () -> Unit = {},
+    onLongPressAutoRotate: () -> Unit = {},
+    onLongPressBatterySaver: () -> Unit = {},
+    onLongPressScreenRecording: () -> Unit = {},
     onSetBrightness: (Float) -> Unit,
     onSetMediaVolume: (Float) -> Unit,
     onDismissNotification: (Any) -> Unit,
@@ -171,17 +183,24 @@ fun NotificationShade(
                 // Each tile carries its active state, an optional per-tile transitioning
                 // flag (Bluetooth — US-005), and an optional availability flag
                 // (Flashlight — US-006: disabled/grey when the device has no torch).
-                data class Toggle(val label: String, val active: Boolean, val transitioning: Boolean = false, val available: Boolean = true, val onToggle: () -> Unit)
+                data class Toggle(
+                    val label: String,
+                    val active: Boolean,
+                    val transitioning: Boolean = false,
+                    val available: Boolean = true,
+                    val onToggle: () -> Unit,
+                    val onLongPress: () -> Unit = {}
+                )
 
                 val toggles = listOf(
-                    Toggle("Wi-Fi", isWifiOn) { onToggleWifi() },
-                    Toggle("Bluetooth", isBluetoothOn, isBluetoothTransitioning) { onToggleBluetooth() },
-                    Toggle("DND", isDoNotDisturb) { onToggleDnd() },
-                    Toggle("Flashlight", isFlashlightOn, available = isFlashlightAvailable) { onToggleFlashlight() },
-                    Toggle("Airplane", isAirplaneMode) { onToggleAirplaneMode() },
-                    Toggle("Auto-Rotate", isAutoRotateOn) { onToggleAutoRotate() },
-                    Toggle("Battery Saver", isBatterySaverOn) { onToggleBatterySaver() },
-                    Toggle("Screen Rec", isScreenRecording) { onToggleScreenRecording() }
+                    Toggle("Wi-Fi", isWifiOn, onToggle = { onToggleWifi() }, onLongPress = onLongPressWifi),
+                    Toggle("Bluetooth", isBluetoothOn, isBluetoothTransitioning, onToggle = { onToggleBluetooth() }, onLongPress = onLongPressBluetooth),
+                    Toggle("DND", isDoNotDisturb, onToggle = { onToggleDnd() }, onLongPress = onLongPressDnd),
+                    Toggle("Flashlight", isFlashlightOn, available = isFlashlightAvailable, onToggle = { onToggleFlashlight() }, onLongPress = onLongPressFlashlight),
+                    Toggle("Airplane", isAirplaneMode, onToggle = { onToggleAirplaneMode() }, onLongPress = onLongPressAirplaneMode),
+                    Toggle("Auto-Rotate", isAutoRotateOn, onToggle = { onToggleAutoRotate() }, onLongPress = onLongPressAutoRotate),
+                    Toggle("Battery Saver", isBatterySaverOn, onToggle = { onToggleBatterySaver() }, onLongPress = onLongPressBatterySaver),
+                    Toggle("Screen Rec", isScreenRecording, onToggle = { onToggleScreenRecording() }, onLongPress = onLongPressScreenRecording)
                 )
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -194,13 +213,13 @@ fun NotificationShade(
                     // Row 1 — tiles 1..4
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         toggles.take(4).forEach { tile ->
-                            QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(1f))
+                            QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(1f), tile.onLongPress)
                         }
                     }
                     // Row 2 — tiles 5..8
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         toggles.drop(4).forEach { tile ->
-                            QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(1f))
+                            QSTile(tile.label, tile.active, tile.transitioning, tile.available, tile.onToggle, themeColor, Modifier.weight(1f), tile.onLongPress)
                         }
                     }
                 }
@@ -279,8 +298,9 @@ fun NotificationShade(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, isAvailable: Boolean = true, onClick: () -> Unit, themeColor: Color, modifier: Modifier = Modifier) {
+fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, isAvailable: Boolean = true, onClick: () -> Unit, themeColor: Color, modifier: Modifier = Modifier, onLongClick: () -> Unit = {}) {
     val activeBg = Color(0xFFD3E4FF)
     val inactiveBg = Color(0xFF30343A)
     val activeTextColor = Color(0xFF001C38)
@@ -328,7 +348,7 @@ fun QSTile(label: String, isActive: Boolean, isTransitioning: Boolean = false, i
     Column(
         modifier.shadow(4.dp, RoundedCornerShape(16.dp)).background(bg, RoundedCornerShape(16.dp))
             .border(1.dp, border, RoundedCornerShape(16.dp))
-            .clickable(enabled = isAvailable && !isTransitioning) { onClick() }.padding(vertical = 10.dp, horizontal = 4.dp),
+            .combinedClickable(enabled = isAvailable && !isTransitioning, onClick = onClick, onLongClick = onLongClick).padding(vertical = 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
     ) {
         Box {

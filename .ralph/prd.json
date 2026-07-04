@@ -19,7 +19,7 @@
       ],
       "priority": 1,
       "passes": true,
-      "notes": "US-001 completed in Iteration 1 — qubitation: QSTileManager (qs/) is canonical QS state+actions class; SystemStateProvider (data/) reduced to ambient status-bar state; registered in Koin."
+      "notes": "QSTileManager (qs/) is now canonical QS state+actions class with a single receiver for wifi/bt/airplane/dnd intents; SystemStateProvider (data/) reduced to ambient status-bar state (battery/time/location). Rewired ShadeCoreStartable (tile state+toggles + qsm lifecycle) and StatusBarCoreStartable (connectivity icon reads); registered QSTileManager in Koin."
     },
     {
       "id": "US-002",
@@ -35,7 +35,7 @@
       ],
       "priority": 2,
       "passes": true,
-      "notes": "US-002 completed in Iteration 2 — SystemStateProvider.toggleWifi calls WifiManager.setWifiEnabled on pre-Q; falls back to Settings.Panel.ACTION_WIFI on Q+; WIFI_STATE_CHANGED uses EXTRA_WIFI_STATE; QSTileManager is a Koin single."
+      "notes": "SystemStateProvider.toggleWifi calls WifiManager.setWifiEnabled on pre-Q; falls back to Settings.Panel.ACTION_WIFI on Q+. WIFI_STATE_CHANGED broadcast uses EXTRA_WIFI_STATE to sync tile. QSTileManager registered as Koin single. Build passes."
     },
     {
       "id": "US-003",
@@ -49,7 +49,7 @@
       ],
       "priority": 3,
       "passes": true,
-      "notes": "US-003 completed in Iteration 3 — toggleAirplaneMode writes Settings.Global.AIRPLANE_MODE_ON and broadcasts ACTION_AIRPLANE_MODE_CHANGED; receiver syncs tile live."
+      "notes": "toggleAirplaneMode writes Settings.Global.AIRPLANE_MODE_ON + broadcasts ACTION_AIRPLANE_MODE_CHANGED; on SecurityException falls back to ACTION_AIRPLANE_MODE_SETTINGS (mirrors US-002 Ui-Fi graceful fallback). Receiver syncs _airplaneModeEnabled live via ACTION_AIRPLANE_MODE_CHANGED (AC2). Added refreshTileState() re-reading airplane/auto-rotate/battery-saver/DND/bt/wifi from platform, wired into ShadeCoreStartable.ensureShadeWindow() for every-shade-open sync (AC3). Build passes."
     },
     {
       "id": "US-004",
@@ -64,7 +64,7 @@
       ],
       "priority": 4,
       "passes": true,
-      "notes": "US-004 completed in Iteration 3 — autoRotateObserver (ContentObserver) on ACCELEROMETER_ROTATION; refreshTileState re-reads on every shade open."
+      "notes": "SystemStateProvider.toggleAutoRotate writes Settings.System.ACCELEROMETER_ROTATION and updates _autoRotateEnabled; autoRotateObserver (ContentObserver) registered in start() and syncs on external changes; ShadeCoreStartable.ensureShadeWindow calls refreshTileState() so the shade re-reads platform state on every open; typecheck passes."
     },
     {
       "id": "US-005",
@@ -79,7 +79,7 @@
       ],
       "priority": 5,
       "passes": true,
-      "notes": "US-005 completed in Iteration (qsm-mgr) — Bluetooth tile syncs via EXTRA_STATE-driven ACTION_STATE_CHANGED; QSTile renders themeColor-tinted in-progress visual; taps guarded during transition."
+      "notes": "Bluetooth tile syncs via EXTRA_STATE-driven ACTION_STATE_CHANGED handler (STATE_TURNING_ON/OFF tracked into new bluetoothTransitioning flow; settled on STATE_ON/OFF). toggleBluetooth guarded against mid-flight taps; QSTile renders themeColor-tint in-progress visual + disables clicks; refreshTileState re-reads adapter on every shade open. Typecheck passes (07b3b2c)."
     },
     {
       "id": "US-006",
@@ -95,7 +95,7 @@
       ],
       "priority": 6,
       "passes": true,
-      "notes": "US-006 completed in Iteration 6 — CameraManager.TorchCallback drives live sync; null torch state => _flashlightAvailable=false disables tile; Koin singleton scope persists across shade close/reopen."
+      "notes": "detectTorchCamera() filters cameras by FLASH_INFO_AVAILABLE+LENS_FACING_BACK/EXTERNAL; CameraManager.TorchCallback drives live sync while shade is open; null torch state => _flashlightAvailable=false disables tile (grey bg, non-clickable). State lives in Koin singleton scope so persists across shade close/reopen. Build passes."
     },
     {
       "id": "US-007",
@@ -111,7 +111,7 @@
       ],
       "priority": 7,
       "passes": true,
-      "notes": "US-007 completed in Iteration 7 — toggleDnd drives 4-phase OFF→PRIORITY→ALARMS→NONE→OFF cycle via setInterruptionFilter; NotificationListenerService suppresses visible alerts when DND on."
+      "notes": "SystemStateProvider.toggleDnd now drives a 4-phase cycle OFF→PRIORITY→ALARMS→NONE→OFF via NotificationManager.setInterruptionFilter (canonical API) + ZEN_MODE writes for backward consumers; tile flow updates from existing ZEN_MODE_CHANGED receiver. NotificationListenerService.onNotificationPosted suppresses visible alerts when currentInterruptionFilter != INTERRUPTION_FILTER_ALL (AC2). getNotificationPolicy() reads live policy for AC5. Build passes."
     },
     {
       "id": "US-008",
@@ -126,7 +126,7 @@
       ],
       "priority": 8,
       "passes": true,
-      "notes": "US-008 completed in Iteration 8 — toggleBatterySaver reflects PowerManager.isPowerSaveMode and opens ACTION_BATTERY_SAVER_SETTINGS; material-icons-extended dep added; grid rebalanced to 2x4."
+      "notes": "batterySaverEnabled StateFlow already wired; replaced no-op toggle with real PowerManager.setPowerSaveModeEnabled() (reflective @SystemAPI call, falls back to ACTION_BATTERY_SAVER_SETTINGS intent on any failure). Added ACTION_POWER_SAVE_MODE_CHANGED receiver registration + handler for live sync. Tile rendered in NotificationShade with Icons.Filled.BatterySaver; grid rebalanced to 2x4. material-icons-extended dep added in app/build.gradle.kts. Compile passes."
     },
     {
       "id": "US-009",
@@ -145,7 +145,7 @@
       ],
       "priority": 9,
       "passes": true,
-      "notes": "ScreenRecorderController (Koin singleton in data/) owns MediaProjection/MediaRecorder/VirtualDisplay; ScreenRecorderActivity (ui/) is a translucent no-UI trampoline that drives the consent dialog and forwards the resultCode+data token. toggleScreenRecording routes: active→controller.stop(), inactive→launch consent activity. sp.screenRecording delegates to the controller's isRecording flag; tile renders a pulsing red dot when recording. Includes one-hour auto-stop and IS_PENDING finalize. Typecheck passes."
+      "notes": "ScreenRecorderController (Koin singleton) owns the live MediaProjection session and writes H264/MPEG-4 video (+ optional AAC via MIC) to Movies/ScreenRecordings/ through MediaStore with IS_PENDING toggle so the file is playable from gallery after stop. ScreenRecorderActivity (no-UI translucent trampoline) drives createScreenCaptureIntent() consent dialog; on grant the controller builds MediaRecorder + VirtualDisplay pipeline, on deny/cancel it keeps _isRecording=false and logs (AC5/AC8). Tile renders a pulsing red recording dot (US-009 AC3); tile stays inactive until recording succeeds. Handles RECORD_AUDIO + POST_NOTIFICATIONS runtime perms (degrades to video-only when mic denied) and scoped storage via MediaStore RELATIVE_PATH. screenRecording StateFlow in SystemStateProvider delegates to controller so flag survives shade close/reopen. Compile passes — committed at bd134e8."
     },
     {
       "id": "US-010",
@@ -167,7 +167,7 @@
       ],
       "priority": 10,
       "passes": true,
-      "notes": "Each QS tile now winds a meaningful Material Icons icon by label: Wi-Fi → Wifi, Bluetooth → Bluetooth, DND → NotificationsOff, Flashlight → FlashlightOn, Airplane → Flight, Auto-Rotate → ScreenRotation, Battery Saver → BatterySaver, Screen Rec → FiberManualRecord. Tint iconColor adapts to active/inactive/transitioning/unavailable for contrast (AC10)."
+      "notes": " US-010 completed in final iteration — per-tile Material Icons wired through QSTile icon selector; committed as de82e8b."
     }
   ]
 }

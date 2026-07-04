@@ -136,6 +136,17 @@ class ScreenRecorderController(private val context: Context) {
             throw e
         }
 
+        // On API 34+ (and best effort API 33), MediaProjection requires a foreground service
+        // with type mediaProjection to be running before getMediaProjection() will grant a token.
+        // Start the service if we're not already recording. The controller is a Koin singleton,
+        // so this method is effectively serialized through the @Synchronized `start`.
+        if (!_isRecording.value) {
+            try {
+                ScreenRecorderService.start(context)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Failed to start ScreenRecorderService — MediaProjection may be rejected", e)
+            }
+        }
         val mpm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val proj = mpm.getMediaProjection(resultCode, data)
             ?: throw IOException("getMediaProjection returned null for resultCode=$resultCode")
@@ -209,6 +220,15 @@ class ScreenRecorderController(private val context: Context) {
 
         val wasRecording = _isRecording.value
         _isRecording.value = false
+
+        // Service can die anytime now that the capture has stopped — notify it.
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ScreenRecorderService.stop(context)
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to stop ScreenRecorderService: ${e.message}")
+        }
         Log.d(TAG, "Screen recording stopped${if (wasRecording) " and MediaStore entry finalized" else ""}")
     }
 

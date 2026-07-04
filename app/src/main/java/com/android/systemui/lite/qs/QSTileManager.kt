@@ -36,6 +36,11 @@ class QSTileManager(context: Context) {
     fun getNotificationPolicy(): Any? = sp.getNotificationPolicy()
 
     fun toggleWifi() = sp.toggleWifi()
+    fun openWifiSettings() = sp.openWifiSettings()
+    fun openBluetoothSettings() = sp.openBluetoothSettings()
+    fun openDndSettings() = sp.openDndSettings()
+    fun openAutoRotateSettings() = sp.openAutoRotateSettings()
+    fun openScreenRecordingSettings() = sp.openScreenRecordingSettings()
     fun toggleBluetooth() = sp.toggleBluetooth()
     fun toggleDnd() = sp.toggleDnd()
     fun toggleFlashlight() = sp.toggleFlashlight()

@@ -125,6 +125,12 @@
             android:excludeFromRecents="true"
             android:theme="@style/Theme.SystemUILite.ScreenRecorder" />
 
+        <!-- Foreground-service host for screen recording (API 34+ MediaProjection requires it). -->
+        <service
+            android:name=".data.ScreenRecorderService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
     </application>
 
 </manifest>

@@ -215,14 +215,29 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                             listenerConnected = listenerConnected,
                             isResourceMonitorActive = false,
                             statusBarHeightDp = 28,
+                            // In-place toggle tiles (Wi-Fi / Bluetooth / DND / Flashlight /
+                            // Airplane / Auto-Rotate): shade stays open so the user sees the
+                            // tile state flip immediately. Only Battery Saver and Screen Rec
+                            // close the shade — they both bounce to an external activity /
+                            // consent flow, so the panel must be out of the way first.
                             onToggleWifi = { sp.toggleWifi() },
                             onToggleBluetooth = { sp.toggleBluetooth() },
                             onToggleDnd = { sp.toggleDnd() },
                             onToggleFlashlight = { sp.toggleFlashlight() },
                             onToggleAirplaneMode = { sp.toggleAirplaneMode() },
                             onToggleAutoRotate = { sp.toggleAutoRotate() },
-                            onToggleBatterySaver = { sp.toggleBatterySaver() },
-                            onToggleScreenRecording = { sp.toggleScreenRecording() },
+                            onToggleBatterySaver = { animateShadeTo(0f); sp.toggleBatterySaver() },
+                            onToggleScreenRecording = { animateShadeTo(0f); sp.toggleScreenRecording() },
+                            // Long-press: close the shade, then open the matching system
+                            // settings screen (AOSP QS tile long-press convention).
+                            onLongPressWifi = { animateShadeTo(0f); sp.openWifiSettings() },
+                            onLongPressBluetooth = { animateShadeTo(0f); sp.openBluetoothSettings() },
+                            onLongPressDnd = { animateShadeTo(0f); sp.openDndSettings() },
+                            onLongPressFlashlight = { /* no settings screen */ },
+                            onLongPressAirplaneMode = { animateShadeTo(0f); sp.openAirplaneModeSettings() },
+                            onLongPressAutoRotate = { animateShadeTo(0f); sp.openAutoRotateSettings() },
+                            onLongPressBatterySaver = { animateShadeTo(0f); sp.openBatterySettings() },
+                            onLongPressScreenRecording = { /* no settings screen */ },
                             onSetBrightness = { sp.setBrightness((it * 255).toInt()) },
                             onSetMediaVolume = { sp.setMediaVolume((it * 100).toInt()) },
                             onDismissNotification = { id ->
