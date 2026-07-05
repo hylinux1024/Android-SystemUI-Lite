@@ -7,10 +7,15 @@ import android.graphics.PixelFormat
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -18,8 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
@@ -29,26 +34,32 @@ import com.android.systemui.lite.data.SystemStateProvider
 import com.android.systemui.lite.data.WallpaperProvider
 import com.android.systemui.lite.ui.NotificationShade
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
-import kotlin.time.Duration.Companion.milliseconds
 
 class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeController {
 
     companion object {
         private const val TAG = "ShadeCoreStartable"
+
+        private const val TYPE_STATUS_BAR_SUB_PANEL = 2018
+
+        /** Shade progress at or below this is treated as "invisible"; the window is unloaded. */
+        private const val INVISIBLE_PROGRESS_THRESHOLD = 0.005f
     }
 
     private val windowHost = WindowHost()
-    private val scope = CoroutineScope(Dispatchers.Main)
+    // Use AndroidUiDispatcher.Main — it provides the MonotonicFrameClock required by
+    // Compose's Animatable. A bare-Dispatchers.Main scope hits:
+    //   "A MonotonicFrameClock is not available in this CoroutineContext"
+    // when shadeAnimatable.animateTo runs.
+    private val scope = CoroutineScope(SupervisorJob() + AndroidUiDispatcher.Main)
     private val sp by lazy {
         GlobalContext.get().get<SystemStateProvider>()
     }
@@ -62,6 +73,20 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     private var shadeView: ComposeView? = null
     private var isShadeWindowAdded = false
 
+    /**
+     * Compose [Animatable] is the single source of truth for the shade-open fraction.
+     *
+     * Mirrors the top-slide-drawer approach:
+     *  - During drag: [Animatable.snapTo] so the panel tracks the finger with zero latency.
+     *  - On release: [Animatable.animateTo] with a spring for natural snap-open/closed.
+     *
+     * We still mirror the value into [_shadeProgress] so the rest of the codebase (which
+     * consumes `ShadeController.shadeProgress` as a [StateFlow]) keeps working without
+     * a setter pass-through.
+     */
+    override val shadeAnimatable = Animatable(
+        initialValue = 0f,
+    )
     private val _shadeProgress = MutableStateFlow(0f)
     override val shadeProgress: StateFlow<Float> = _shadeProgress.asStateFlow()
 
@@ -89,50 +114,59 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
     }
 
     override fun toggleShade() {
-        Log.d(TAG, "toggleShade: isAdded=$isShadeWindowAdded, progress=${_shadeProgress.value}")
-        if (isShadeWindowAdded && _shadeProgress.value > 0.5f) {
-            animateShadeTo(0f)
-        } else {
-            ensureShadeWindow()
-            animateShadeTo(1f)
-        }
+        Log.d(TAG, "toggleShade: isAdded=$isShadeWindowAdded, progress=${shadeAnimatable.value}")
+        // Toggle comparing the Animatable's live value, not the StateFlow mirror which
+        // lags a frame behind (line 211 write hasn't landed yet when we read here).
+        if (!(isShadeWindowAdded && shadeAnimatable.value > 0.5f)) ensureShadeWindow()
+        runShadeAnim { animateToWithSpring(Spring.DampingRatioNoBouncy, target = 1f) }
     }
 
-    override fun dragShade(progress: Float) {
-        shadeAnimJob?.cancel()
+    override fun snapShade(progress: Float) {
+        // Immediate — no animation. Used during drag so the panel tracks finger with zero
+        // latency (top-slide-drawer parity: drawerOffsetY.snapTo). snapTo cancels any
+        // in-flight animation on the Animatable, so the coroutine we're already in (if
+        // this came from a drag frame) is okay — but callers are non-suspend, so we
+        // hop onto the dispatch scope to satisfy the suspend contract.
         val clamped = progress.coerceIn(0f, 1f)
-        _shadeProgress.value = clamped
         if (clamped > 0f) ensureShadeWindow()
+        shadeAnimJob?.cancel()
+        shadeAnimJob = scope.launch { shadeAnimatable.snapTo(clamped) }
     }
 
     override fun flingShade(target: Float) {
-        animateShadeTo(target.coerceIn(0f, 1f))
+        val clamped = target.coerceIn(0f, 1f)
+        if (clamped > 0f) ensureShadeWindow()
+        runShadeAnim { animateToWithSpring(Spring.DampingRatioLowBouncy, target = clamped) }
     }
 
-    private fun animateShadeTo(target: Float) {
+    /**
+     * Cancel any in-flight shade animation and run [block] inside a fresh coroutine on the
+     * UI dispatcher. Animations that land within [INVISIBLE_PROGRESS_THRESHOLD] of 0 close the
+     * window on completion so the next open starts clean.
+     */
+    private fun runShadeAnim(block: suspend CoroutineScope.() -> Unit) {
         shadeAnimJob?.cancel()
-        val from = _shadeProgress.value
-        val to = target
-        if (!isShadeWindowAdded && to <= 0f) return
-
         shadeAnimJob = scope.launch {
-            val startTime = System.nanoTime()
-            val duration = 400_000_000L
-            while (isActive) {
-                val elapsed = System.nanoTime() - startTime
-                if (elapsed >= duration) {
-                    _shadeProgress.value = to
-                    break
-                }
-                val fraction = (elapsed.toFloat() / duration).coerceIn(0f, 1f)
-                val eased = 1f - (1f - fraction) * (1f - fraction) * (1f - fraction)
-                _shadeProgress.value = from + (to - from) * eased
-                delay(16.milliseconds)
-            }
-            if (_shadeProgress.value <= 0f) {
-                closeShade()
-            }
+            block()
+            if (shadeAnimatable.value <= INVISIBLE_PROGRESS_THRESHOLD) closeShade()
         }
+    }
+
+    /**
+     * Spring-animate the shade to [target] with damping [ratio]. Stiffness is shared between
+     * all uses (toggle, fling) — damping is the only user-visible difference.
+     */
+    private suspend fun CoroutineScope.animateToWithSpring(
+        dampingRatio: Float,
+        target: Float,
+    ) {
+        shadeAnimatable.animateTo(
+            targetValue = target,
+            animationSpec = spring(
+                dampingRatio = dampingRatio,
+                stiffness = Spring.StiffnessMedium,
+            ),
+        )
     }
 
     private fun ensureShadeWindow() {
@@ -144,9 +178,6 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
 
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-        @Suppress("DEPRECATION")
-        val TYPE_STATUS_BAR_SUB_PANEL = 2018
-
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -155,7 +186,7 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                     WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS,
-            PixelFormat.TRANSLUCENT
+            PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.FILL
             setTitle("NotificationShade")
@@ -183,7 +214,12 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                     val screenRecording by sp.screenRecording.collectAsState()
                     val brightness by sp.brightness.collectAsState()
                     val mediaVolume by sp.mediaVolume.collectAsState()
-                    val progress by _shadeProgress.collectAsState()
+                    // Subscribe to the live Animatable value so every animation frame drives the
+                    // offset directly — smoother round-trip than going through a StateFlow.
+                    val progress by shadeAnimatable.asState()
+                    // Inline-scoped mirror: keep the rest of the codebase's StateFlow consumers
+                    // (anything that can't observe an Animatable, e.g. tests) in sync.
+                    LaunchedEffect(progress) { _shadeProgress.value = progress }
                     val wallpaperColors by wp.wallpaperColors.collectAsState()
                     val shadeNotifications by notificationRepo.notifications.collectAsState()
                     val listenerConnected by notificationRepo.isConnected.collectAsState()
@@ -193,8 +229,14 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                         modifier = Modifier
                             .fillMaxSize()
                             .onSizeChanged { viewHeightPx = it.height.toFloat() }
-                            .offset {
-                                IntOffset(0, (-(viewHeightPx * (1f - progress))).toInt())
+                            .graphicsLayer {
+                                // Render-only translation. NOT Modifier.offset — offset changes
+                                // the layout position, so child pointer events report coordinates
+                                // in the shifted space. graphicsLayer's translationY leaves the
+                                // layout (and pointer hit-testing) coordinates untouched so the
+                                // pull-down gesture in the status-bar window sees a stable
+                                // coordinate frame even as the panel animates.
+                                translationY = -(viewHeightPx * (1f - progress))
                             }
                     ) {
                         NotificationShade(
@@ -226,17 +268,17 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                             onToggleFlashlight = { sp.toggleFlashlight() },
                             onToggleAirplaneMode = { sp.toggleAirplaneMode() },
                             onToggleAutoRotate = { sp.toggleAutoRotate() },
-                            onToggleBatterySaver = { animateShadeTo(0f); sp.toggleBatterySaver() },
-                            onToggleScreenRecording = { animateShadeTo(0f); sp.toggleScreenRecording() },
+                            onToggleBatterySaver = { flingShade(0f); sp.toggleBatterySaver() },
+                            onToggleScreenRecording = { flingShade(0f); sp.toggleScreenRecording() },
                             // Long-press: close the shade, then open the matching system
                             // settings screen (AOSP QS tile long-press convention).
-                            onLongPressWifi = { animateShadeTo(0f); sp.openWifiSettings() },
-                            onLongPressBluetooth = { animateShadeTo(0f); sp.openBluetoothSettings() },
-                            onLongPressDnd = { animateShadeTo(0f); sp.openDndSettings() },
+                            onLongPressWifi = { flingShade(0f); sp.openWifiSettings() },
+                            onLongPressBluetooth = { flingShade(0f); sp.openBluetoothSettings() },
+                            onLongPressDnd = { flingShade(0f); sp.openDndSettings() },
                             onLongPressFlashlight = { /* no settings screen */ },
-                            onLongPressAirplaneMode = { animateShadeTo(0f); sp.openAirplaneModeSettings() },
-                            onLongPressAutoRotate = { animateShadeTo(0f); sp.openAutoRotateSettings() },
-                            onLongPressBatterySaver = { animateShadeTo(0f); sp.openBatterySettings() },
+                            onLongPressAirplaneMode = { flingShade(0f); sp.openAirplaneModeSettings() },
+                            onLongPressAutoRotate = { flingShade(0f); sp.openAutoRotateSettings() },
+                            onLongPressBatterySaver = { flingShade(0f); sp.openBatterySettings() },
                             onLongPressScreenRecording = { /* no settings screen */ },
                             onSetBrightness = { sp.setBrightness((it * 255).toInt()) },
                             onSetMediaVolume = { sp.setMediaVolume((it * 100).toInt()) },
@@ -246,16 +288,14 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
                             onClearAllNotifications = {
                                 notificationRepo.clearAllNotifications()
                             },
-                            onCloseShade = { animateShadeTo(0f) },
-                            onDragShade = { progress -> dragShade(progress) },
-                            onOpenShade = { flingShade(1f) },
+                            onCloseShade = { flingShade(0f) },
                             onNotificationClick = { item ->
                                 try {
                                     item.contentIntent?.send()
                                 } catch (e: PendingIntent.CanceledException) {
                                     Log.e(TAG, "Failed to send contentIntent: ${e.message}", e)
                                 }
-                                animateShadeTo(0f)
+                                flingShade(0f)
                                 if (item.autoCancel) {
                                     notificationRepo.dismissNotification(item.id.toString())
                                 }
@@ -289,6 +329,9 @@ class ShadeCoreStartable(private val context: Context) : CoreStartable, ShadeCon
         }
         shadeView = null
         isShadeWindowAdded = false
+        // Reset the Animatable so the next drag starts from 0 (top-slide-drawer parity:
+        // a closed drawer always resets to 0 — no stale progress carried between gestures).
+        scope.launch { shadeAnimatable.snapTo(0f) }
         _shadeProgress.value = 0f
     }
 }

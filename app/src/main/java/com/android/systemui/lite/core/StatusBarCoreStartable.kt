@@ -7,17 +7,34 @@ import android.graphics.Rect
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.android.systemui.lite.CoreStartable
+import com.android.systemui.lite.gesture.detector.ShadeGestureDetector
+import com.android.systemui.lite.gesture.model.GestureType
+import com.android.systemui.lite.gesture.sink.GestureActionSink
+import com.android.systemui.lite.model.BatteryPercentageStyle
+import com.android.systemui.lite.model.ClockPosition
 import com.android.systemui.lite.ui.StatusBar
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
 
 class StatusBarCoreStartable(
@@ -30,10 +47,32 @@ class StatusBarCoreStartable(
     }
 
     private val windowHost = WindowHost()
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var statusBarView: ComposeView? = null
 
     private val sp by lazy {
         GlobalContext.get().get<com.android.systemui.lite.data.SystemStateProvider>()
+    }
+
+    private val shadeDetector: ShadeGestureDetector by lazy {
+        ShadeGestureDetector(
+            scope = scope,
+            shadeRangePx = context.resources.displayMetrics.heightPixels.toFloat(),
+            sink = object : GestureActionSink {
+                override fun onCommitted(type: GestureType) {
+                    // Top-slide-drawer parity: a tap past the threshold or a fling past
+                    // threshold snaps fully open; otherwise snap fully closed.
+                    shadeController.flingShade(1f)
+                }
+                override fun onCancelled(type: GestureType) {
+                    // Non-fling sub-threshold drag — snap back.
+                    shadeController.flingShade(0f)
+                }
+                override fun onProgress(type: GestureType, progress: Float) {
+                    shadeController.snapShade(progress)
+                }
+            },
+        )
     }
 
     data class CutoutInfo(
@@ -91,7 +130,23 @@ class StatusBarCoreStartable(
         }
 
         val screenHeightPx = context.resources.displayMetrics.heightPixels
-        val maxShadeOffsetPx = screenHeightPx.toFloat()
+        val screenWidthPx = context.resources.displayMetrics.widthPixels
+
+        shadeDetector.updateDisplaySize(screenWidthPx, screenHeightPx)
+        // 安装手势探测器
+        val shadeDragModifier = Modifier.pointerInput(screenWidthPx, screenHeightPx) {
+            detectDragGestures(
+                onDragStart = { offset: Offset ->
+                    shadeDetector.onDown(offset.x, offset.y, screenWidthPx, screenHeightPx)
+                },
+                onDrag = { change: PointerInputChange, dragAmount: Offset ->
+                    change.consume()
+                    shadeDetector.onMove(dragAmount.x, dragAmount.y, change.position.x, change.position.y)
+                },
+                onDragEnd = { shadeDetector.onUp() },
+                onDragCancel = { shadeDetector.onUp() },
+            )
+        }
 
         statusBarView = ComposeView(context).apply {
             setViewTreeLifecycleOwner(windowHost)
@@ -135,8 +190,8 @@ class StatusBarCoreStartable(
                     StatusBar(
                         heightDp = 28,
                         iconSizeDp = 16,
-                        clockPosition = com.android.systemui.lite.model.ClockPosition.LEFT,
-                        batteryStyle = com.android.systemui.lite.model.BatteryPercentageStyle.ICON_AND_TEXT,
+                        clockPosition = ClockPosition.LEFT,
+                        batteryStyle = BatteryPercentageStyle.ICON_AND_TEXT,
                         batteryLevel = battery.level,
                         isCharging = battery.isCharging,
                         isWifiOn = wifiOn,
@@ -145,20 +200,11 @@ class StatusBarCoreStartable(
                         isAirplaneMode = airplaneOn,
                         timeString = timeString,
                         isTrafficActive = false,
-                        themeColor = androidx.compose.ui.graphics.Color(0xFF00ADB5),
+                        themeColor = Color(0xFF00ADB5),
                         safeInsetLeft = cutout.safeInsetLeft,
                         safeInsetRight = cutout.safeInsetRight,
-                        onShadeToggle = { shadeController.toggleShade() },
-                        onShadeDragUpdate = { offset ->
-                            shadeController.dragShade((offset / maxShadeOffsetPx).coerceIn(0f, 1f))
-                        },
-                        onShadeDragEnd = { offset, isFling ->
-                            if (kotlin.math.abs(offset) < 8f) return@StatusBar
-                            val shouldOpen = if (isFling) offset > 120f
-                            else offset > maxShadeOffsetPx / 3f
-                            shadeController.flingShade(if (shouldOpen) 1f else 0f)
-                        },
-                        isShadeOpen = shadeProgress > 0.5f
+                        isShadeOpen = shadeProgress > 0.5f,
+                        shadeDragModifier = shadeDragModifier
                     )
                 }
             }

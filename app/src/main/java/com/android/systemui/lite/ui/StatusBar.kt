@@ -56,16 +56,15 @@ fun StatusBar(
     themeColor: Color,
     safeInsetLeft: Int = 0,
     safeInsetRight: Int = 0,
-    onShadeToggle: () -> Unit,
-    onShadeDragUpdate: ((Float) -> Unit)? = null,
-    onShadeDragEnd: ((totalDragY: Float, isFling: Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier,
-    isShadeOpen: Boolean = false
+    isShadeOpen: Boolean = false,
+    /**
+     * Pointer-input modifier that hosts the shade gesture detector, injected by
+     * [com.android.systemui.lite.core.StatusBarCoreStartable]. The StatusBar composable stays
+     * free of gesture-detector logic.
+     */
+    shadeDragModifier: Modifier = Modifier,
 ) {
-    var totalDragY by remember { mutableStateOf(0f) }
-    var totalDragX by remember { mutableStateOf(0f) }
-    var dragStartMs by remember { mutableStateOf(0L) }
-
     // Status bar dimensions matching AOSP SystemUI-Lite reference
     val statusBarHeight = 24.dp
     val defaultHorizontalPadding = 8.dp
@@ -86,38 +85,9 @@ fun StatusBar(
             .fillMaxWidth()
             .height(statusBarHeight)
             .background(Color.Transparent)
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = {
-                        totalDragY = 0f
-                        totalDragX = 0f
-                        dragStartMs = System.currentTimeMillis()
-                    },
-                    onDragEnd = {
-                        val absY = kotlin.math.abs(totalDragY)
-                        val absX = kotlin.math.abs(totalDragX)
-                        if (absY < 8f && absX < 8f) {
-                            onShadeToggle()
-                        } else if (!isShadeOpen) {
-                            val elapsedMs = (System.currentTimeMillis() - dragStartMs).coerceAtLeast(1)
-                            val velocity = totalDragY / elapsedMs * 1000f
-                            val isFling = velocity > 800f && totalDragY > 40f
-                            onShadeDragEnd?.invoke(totalDragY, isFling)
-                        }
-                    },
-                    onDragCancel = {},
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        totalDragY += dragAmount.y
-                        totalDragX += dragAmount.x
-                        if (totalDragY > 0 && !isShadeOpen) {
-                            onShadeDragUpdate?.invoke(totalDragY)
-                        }
-                    }
-                )
-            }
+            .then(shadeDragModifier)
             .padding(start = startPadding, end = endPadding),
-        verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically
     ) {
         // --- Clock Section ---
         val clockComposable = @Composable {
