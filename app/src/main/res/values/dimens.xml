@@ -1,0 +1,8 @@
+<resources>
+    <!--
+      Uses the platform-agnostic system status_bar_height. Marked with the
+      @*android: star-import so the linker resolves it against the device
+      framework at runtime (it is a public framework dimension, safe to star).
+    -->
+    <dimen name="status_bar_height">@*android:dimen/status_bar_height</dimen>
+</resources>

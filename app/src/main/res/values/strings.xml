@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_label">SystemUI-Lite</string>
+    <string name="wallpaper_label">SystemUI-Lite Wallpaper</string>
+    <string name="wallpaper_description">SystemUI-Lite default wallpaper engine</string>
+</resources>

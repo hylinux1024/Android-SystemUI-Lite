@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:sharedUserId="android.uid.system"
+    coreApp="true">
+
+    <!-- Minimal permission set for Phase 1 (process boots + stays alive).
+         UI-phase permissions (BLUETOOTH_*, CAMERA, …) are added in later milestones. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />
+    <uses-permission android:name="android.permission.STATUS_BAR" />
+    <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
+    <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+
+    <!-- Wallpaper milestone: read/set wallpaper & read wallpaper file.
+         SET_WALLPAPER needed for WallpaperManager.clear() fallback in ImageWallpaper.
+         READ_WALLPAPER_INTERNAL is signature-protected (platform cert). -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+<!--    <uses-permission android:name="android.permission.SET_WALLPAPER_DIM_AMOUNT" />-->
+    <uses-permission android:name="android.permission.READ_WALLPAPER_INTERNAL" />
+
+    <!-- Custom signature-protected permission (mirrors AOSP SystemUI). -->
+    <permission android:name="com.android.systemui.permission.SELF"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.android.systemui.permission.SELF" />
+
+    <application
+        android:name=".SystemUIApplication"
+        android:persistent="true"
+        android:allowClearUserData="false"
+        android:hardwareAccelerated="true"
+        android:label="@string/app_label"
+        android:process="com.android.systemui"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SystemUI"
+        android:defaultToDeviceProtectedStorage="true"
+        android:directBootAware="true"
+        tools:replace="android:appComponentFactory"
+        android:appComponentFactory=".SystemUIAppComponentFactory">
+
+        <service android:name=".SystemUIService"
+            android:exported="true" />
+
+        <receiver android:name=".SysuiRestartReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.android.systemui.action.RESTART" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Wallpaper engine. Declared with BIND_WALLPAPER so only the system's
+             WallpaperManagerService can bind it. The WallpaperService intent-filter
+             makes it visible in the wallpaper picker; the meta-data provides the
+             picker label/description/thumbnail. The user MUST select it in the
+             picker once before it draws (wallpaper subsystem security contract). -->
+        <service android:name=".wallpapers.ImageWallpaper"
+            android:exported="true"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data android:name="android.service.wallpaper"
+                android:resource="@xml/wallpaper_metadata" />
+        </service>
+
+    </application>
+</manifest>

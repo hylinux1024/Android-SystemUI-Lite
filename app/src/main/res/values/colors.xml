@@ -1,0 +1,5 @@
+<resources>
+    <!-- Phase 1 only references this so the resource graph is non-empty; the
+         real palette comes from SystemUI-Lite in a later milestone. -->
+    <color name="system_bar_background_opaque">#ff000000</color>
+</resources>

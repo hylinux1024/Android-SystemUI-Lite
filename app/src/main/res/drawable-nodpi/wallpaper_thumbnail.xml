@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vector placeholder thumbnail for the wallpaper picker. A real build would
+     ship an actual preview image; a gradient keeps the resource self-contained. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:startColor="#FF00ADB5"
+        android:endColor="#FF222831"
+        android:angle="135" />
+</shape>

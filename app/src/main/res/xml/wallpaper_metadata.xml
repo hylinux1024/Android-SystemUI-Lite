@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Wallpaper picker metadata for ImageWallpaper.
+     Required by the android.service.wallpaper meta-data tag; provides the
+     label, description and thumbnail shown in the system wallpaper picker. -->
+<wallpaper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:label="@string/wallpaper_label"
+    android:description="@string/wallpaper_description"
+    android:thumbnail="@drawable/wallpaper_thumbnail" />

@@ -1,0 +1,11 @@
+<resources>
+    <!--
+      Public parent theme. Avoids @*android:... private resource lookups that
+      would need the framework jar at link time and add risk for no Phase-1
+      benefit. Later milestones swap to the richer SystemUI theme from the
+      proven SystemUI-Lite res/ once the status bar is up.
+    -->
+    <style name="Theme.SystemUI" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>
