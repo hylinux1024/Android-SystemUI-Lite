@@ -8,4 +8,10 @@
     <style name="Theme.SystemUI" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowNoTitle">true</item>
     </style>
+
+    <!-- Status-bar clock appearance. Parent is the framework StatusBar icon
+         text appearance; only size is overridden. -->
+    <style name="TextAppearance.StatusBar.Clock" parent="@android:style/TextAppearance.StatusBar.Icon">
+        <item name="android:textSize">@dimen/status_bar_clock_size</item>
+    </style>
 </resources>

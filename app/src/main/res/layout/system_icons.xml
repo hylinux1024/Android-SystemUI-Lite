@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  System-icon cluster. Mirrors AOSP SystemUI system_icons.xml:
+  statusIcons (signal + wifi) + battery_container (level text + battery icon).
+  Included into status_bar.xml via <include>.
+-->
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <LinearLayout
+        android:id="@+id/system_icons"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:id="@+id/statusIcons"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:id="@+id/signal_icon"
+                android:layout_width="@dimen/status_bar_icon_size"
+                android:layout_height="@dimen/status_bar_icon_size"
+                android:scaleType="centerInside"
+                android:layout_marginEnd="4dp"
+                android:contentDescription="@string/cd_signal_null" />
+
+            <ImageView
+                android:id="@+id/wifi_icon"
+                android:layout_width="@dimen/status_bar_wifi_signal_size"
+                android:layout_height="@dimen/status_bar_wifi_signal_size"
+                android:scaleType="centerInside"
+                android:layout_marginEnd="4dp"
+                android:contentDescription="@string/cd_wifi_disconnected" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/battery_container"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/battery_level"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:textAppearance="@style/TextAppearance.StatusBar.Clock" />
+
+            <ImageView
+                android:id="@+id/battery_icon"
+                android:layout_width="@dimen/status_bar_battery_icon_width"
+                android:layout_height="@dimen/status_bar_battery_icon_height"
+                android:scaleType="centerInside"
+                android:contentDescription="@string/cd_battery" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</merge>

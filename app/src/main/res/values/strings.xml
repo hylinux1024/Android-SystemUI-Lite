@@ -2,4 +2,11 @@
     <string name="app_label">SystemUI-Lite</string>
     <string name="wallpaper_label">SystemUI-Lite Wallpaper</string>
     <string name="wallpaper_description">SystemUI-Lite default wallpaper engine</string>
+    <string name="clock_cd_format">Clock, %s</string>
+    <string name="cd_wifi_connected">Wifi connected.</string>
+    <string name="cd_wifi_disconnected">Wifi disconnected.</string>
+    <string name="cd_signal_null">No signal.</string>
+    <string name="cd_signal_strength">Mobile signal %d</string>
+    <string name="cd_battery">Battery %d percent</string>
+    <string name="cd_battery_charging">Battery charging %d percent</string>
 </resources>

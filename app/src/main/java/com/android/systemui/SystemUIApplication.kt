@@ -3,6 +3,7 @@ package com.android.systemui
 import android.app.Application
 import android.content.res.Configuration
 import android.util.Log
+import com.android.systemui.statusbar.StatusBarManager
 import com.android.systemui.wallpapers.WallpaperProvider
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -16,6 +17,7 @@ class SystemUIApplication : Application() {
 
     @Inject lateinit var coreStartableComponent: CoreStartableComponent
     @Inject lateinit var wallpaperProvider: WallpaperProvider
+    @Inject lateinit var statusBarManager: StatusBarManager
 
     override fun onCreate() {
         super.onCreate()
@@ -25,13 +27,20 @@ class SystemUIApplication : Application() {
         // changes (scaffolding for future status-bar / monet theming).
         coreStartableComponent.register(wallpaperProvider)
 
+        // Status bar: adds the TYPE_STATUS_BAR window overlay. Its start() runs
+        // inside coreStartableComponent.start() below, per the CoreStartableComponent
+        // one-shot contract (register must precede start).
+        coreStartableComponent.register(statusBarManager)
+        // Wire the auto-hide controller to the status bar element before start().
+        statusBarManager.autoHideController.setStatusBar(statusBarManager)
+
         // Smoke-test: register a single trivial component to prove the
         // CoreStartable lifecycle (register → start → injected component.run)
         // is wired up end-to-end. Removed once real components are stable.
         coreStartableComponent.register(DummyCoreStartable())
 
         coreStartableComponent.start()
-        Log.i(TAG, "All CoreStartable services started; process is alive.")
+        Log.i(TAG, "All CoreStartable services started; status bar visible, process is alive.")
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {

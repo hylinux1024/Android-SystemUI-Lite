@@ -5,4 +5,18 @@
       framework at runtime (it is a public framework dimension, safe to star).
     -->
     <dimen name="status_bar_height">@*android:dimen/status_bar_height</dimen>
+
+    <!-- Status-bar milestone (Phase 3). Values mirror AOSP SystemUI dimens. -->
+    <dimen name="status_bar_icon_size">@*android:dimen/status_bar_system_icon_size</dimen>
+    <dimen name="status_bar_wifi_signal_size">@*android:dimen/status_bar_system_icon_size</dimen>
+    <dimen name="status_bar_padding_start">8dp</dimen>
+    <dimen name="status_bar_padding_end">8dp</dimen>
+    <dimen name="status_bar_padding_top">0dp</dimen>
+    <dimen name="status_bar_clock_size">14sp</dimen>
+    <dimen name="status_bar_battery_icon_height">13dp</dimen>
+    <dimen name="status_bar_battery_icon_width">7.8dp</dimen>
+    <dimen name="status_bar_horizontal_padding">2.5dp</dimen>
+    <dimen name="status_bar_clock_starting_padding">0dp</dimen>
+    <dimen name="status_bar_clock_end_padding">0dp</dimen>
+    <dimen name="signal_icon_size_roaming">16dp</dimen>
 </resources>

@@ -2,4 +2,12 @@
     <!-- Phase 1 only references this so the resource graph is non-empty; the
          real palette comes from SystemUI-Lite in a later milestone. -->
     <color name="system_bar_background_opaque">#ff000000</color>
+
+    <!-- Status-bar milestone (Phase 3). Icons take two tints depending on
+         wallpaper luminance (via WallpaperProvider.isDark). -->
+    <color name="status_bar_icon_tint_dark">#ffffffff</color>
+    <color name="status_bar_icon_tint_light">#99000000</color>
+    <color name="status_bar_clock_color_dark">#ffffffff</color>
+    <color name="status_bar_clock_color_light">#ff202124</color>
+    <color name="status_bar_battery_level">#99ffffff</color>
 </resources>
