@@ -19,6 +19,8 @@ import android.widget.Space
 import android.widget.TextView
 import com.android.systemui.CoreStartable
 import com.android.systemui.R
+import com.android.systemui.statusbar.shade.NotificationPanelViewController
+import com.android.systemui.statusbar.shade.ShadeExpansionStateManager
 import com.android.systemui.wallpapers.WallpaperProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -48,7 +50,9 @@ class StatusBarManager @Inject constructor(
     private val wifiController: WifiController,
     private val signalController: SignalController,
     private val wallpaperProvider: WallpaperProvider,
-    val autoHideController: AutoHideController        // public → SystemUIApplication wires it
+    val autoHideController: AutoHideController,        // public → SystemUIApplication wires it
+    private val notificationPanelViewController: NotificationPanelViewController,
+    private val expansionStateManager: ShadeExpansionStateManager
 ) : CoreStartable,
     BatteryController.BatteryStateListener,
     WifiController.WifiStateListener,
@@ -68,6 +72,10 @@ class StatusBarManager @Inject constructor(
     private var signalIcon: ImageView? = null
     private var systemIconsLayout: android.widget.LinearLayout? = null
     private var cutoutSpace: Space? = null
+    private var startSideExcludingHeadsUp: android.widget.LinearLayout? = null
+    private var statusIcons: android.widget.LinearLayout? = null
+    private var batteryView: android.view.View? = null
+    private var statusBarTransitions: StatusBarTransitions? = null
 
     // touch → auto-hide + (reserved) Stage 2 shade-forward
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -105,6 +113,17 @@ class StatusBarManager @Inject constructor(
         signalIcon = statusBarView?.findViewById(R.id.signal_icon)
         systemIconsLayout = statusBarView?.findViewById(R.id.system_icons)
         cutoutSpace = statusBarView?.findViewById(R.id.cutout_space_view)
+        startSideExcludingHeadsUp = statusBarView?.findViewById(R.id.status_bar_start_side_content)
+        statusIcons = statusBarView?.findViewById(R.id.statusIcons)
+        batteryView = statusBarView?.findViewById(R.id.battery_icon)
+
+        // Status-bar icon alpha transitions (lights-out / panel-expansion fade).
+        statusBarTransitions = StatusBarTransitions(
+            startSide = startSideExcludingHeadsUp ?: statusBarView!!,
+            statusIcons = statusIcons ?: statusBarView!!,
+            battery = batteryView ?: statusBarView!!
+        )
+        expansionStateManager.addListener(statusBarTransitions!!)
 
         // Bind the clock controller once we have its view. start() then runs the clock.
         clockController.bind(clockTextView)
@@ -319,16 +338,25 @@ class StatusBarManager @Inject constructor(
 
     // -------------------------------------------------------------------- touch
 
+    /**
+     * Forward status-bar touches to the notification panel's TouchHandler.
+     *
+     * On ACTION_DOWN we ask the TouchHandler whether it wants to intercept the
+     * gesture (vertical drag). If it does, we hijack the stream and forward
+     * MOVE/UP to it so the panel expands with the finger. Otherwise we just
+     * feed the auto-hide controller (legacy behavior) and eat the event so it
+     * does not fall through to the launcher.
+     */
     private fun handleStatusBarTouch(event: MotionEvent): Boolean {
         autoHideController.checkUserAutoHide(event)
-        // Stage 2 (notification shade): forward DOWN/MOVE/UP via NotificationShadeManager.
+        // Forward every event (DOWN / MOVE / UP / CANCEL) to the panel's
+        // TouchHandler. The TouchHandler itself decides whether to start
+        // tracking on a vertical drag — it needs the DOWN to initialise
+        // startY and the velocity tracker.
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                autoHideController.touchAutoHide()
-                return true
-            }
+            MotionEvent.ACTION_DOWN -> autoHideController.touchAutoHide()
         }
-        return true
+        return notificationPanelViewController.handleTouch(event)
     }
 
     // ----------------------------------------------------------- AutoHide

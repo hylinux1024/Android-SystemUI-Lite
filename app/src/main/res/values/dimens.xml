@@ -19,4 +19,12 @@
     <dimen name="status_bar_clock_starting_padding">0dp</dimen>
     <dimen name="status_bar_clock_end_padding">0dp</dimen>
     <dimen name="signal_icon_size_roaming">16dp</dimen>
+
+    <!-- Shade panel milestone (Phase 4). Mirrors AOSP SystemUI dimens. -->
+    <dimen name="notification_panel_margin_horizontal">16dp</dimen>
+    <dimen name="shade_open_spring_out_duration">350</dimen>
+    <dimen name="shade_close_duration">300</dimen>
+    <dimen name="lights_in_duration">250</dimen>
+    <dimen name="lights_out_duration">1500</dimen>
+    <dimen name="background_duration">200</dimen>
 </resources>

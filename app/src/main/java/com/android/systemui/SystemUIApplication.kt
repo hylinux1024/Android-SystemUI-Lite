@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.res.Configuration
 import android.util.Log
 import com.android.systemui.statusbar.StatusBarManager
+import com.android.systemui.statusbar.shade.NotificationPanelViewController
+import com.android.systemui.statusbar.shade.NotificationShadeWindowController
 import com.android.systemui.wallpapers.WallpaperProvider
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -18,6 +20,8 @@ class SystemUIApplication : Application() {
     @Inject lateinit var coreStartableComponent: CoreStartableComponent
     @Inject lateinit var wallpaperProvider: WallpaperProvider
     @Inject lateinit var statusBarManager: StatusBarManager
+    @Inject lateinit var shadeWindowController: NotificationShadeWindowController
+    @Inject lateinit var notificationPanelController: NotificationPanelViewController
 
     override fun onCreate() {
         super.onCreate()
@@ -33,6 +37,13 @@ class SystemUIApplication : Application() {
         coreStartableComponent.register(statusBarManager)
         // Wire the auto-hide controller to the status bar element before start().
         statusBarManager.autoHideController.setStatusBar(statusBarManager)
+
+        // Notification shade window (TYPE_NOTIFICATION_SHADE) — hosts the expanded
+        // panel. Must be created before the panel controller binds its TouchHandler.
+        coreStartableComponent.register(shadeWindowController)
+        // Panel controller — binds TouchHandler to the shade window and drives
+        // expand/collapse animations.
+        coreStartableComponent.register(notificationPanelController)
 
         // Smoke-test: register a single trivial component to prove the
         // CoreStartable lifecycle (register → start → injected component.run)

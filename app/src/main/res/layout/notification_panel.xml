@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Notification panel root layout. Mirrors AOSP status_bar_expanded.xml
+  (NotificationPanelView) in its minimal form: a transparent root hosting a
+  vertical container with a QS placeholder on top and a notification-stack
+  placeholder below. Both placeholders are empty until Phase 5.
+-->
+<com.android.systemui.statusbar.shade.NotificationPanelView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/notification_panel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent"
+    android:visibility="gone">
+
+    <!-- Vertical container: QS placeholder + notification stack placeholder. -->
+    <com.android.systemui.statusbar.shade.NotificationContainerParent
+        android:id="@+id/notification_container_parent"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <!-- QS placeholder — replaced by the real QS panel in Phase 5. -->
+        <FrameLayout
+            android:id="@+id/qs_frame"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="@dimen/notification_panel_margin_horizontal" />
+
+        <!-- Notification stack placeholder — replaced by NSSL in Phase 5. -->
+        <FrameLayout
+            android:id="@+id/notification_stack_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+    </com.android.systemui.statusbar.shade.NotificationContainerParent>
+
+</com.android.systemui.statusbar.shade.NotificationPanelView>

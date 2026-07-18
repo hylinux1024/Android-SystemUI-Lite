@@ -10,4 +10,11 @@
     <color name="status_bar_clock_color_dark">#ffffffff</color>
     <color name="status_bar_clock_color_light">#ff202124</color>
     <color name="status_bar_battery_level">#99ffffff</color>
+
+    <!-- Shade panel milestone (Phase 4). Panel background adapts to wallpaper
+         luminance (via WallpaperProvider.isDark) — lighter tint on dark
+         wallpapers so content stays legible, darker tint on light wallpapers
+         for the scrim/frosted look. -->
+    <color name="notification_panel_background_dark">#f5000000</color>
+    <color name="notification_panel_background_light">#f5ffffff</color>
 </resources>
