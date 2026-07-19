@@ -14,6 +14,14 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <!-- Required by EdgeBackGestureHandler to register the system-wide
+         "edge-swipe" InputMonitor (monitors touch before the focused window).
+         Signature-protected; satisfied by platform signing + system uid. -->
+    <uses-permission android:name="android.permission.INPUT_MONITOR" />
+    <!-- Required by EdgeBackGestureHandler to inject the BACK key event into the
+         focused window when an edge-swipe is recognised. Signature-protected;
+         satisfied by the platform signing + android.uid.system sharedUserId. -->
+    <uses-permission android:name="android.permission.INJECT_EVENTS" />
 
     <!-- Wallpaper milestone: read/set wallpaper & read wallpaper file.
          SET_WALLPAPER needed for WallpaperManager.clear() fallback in ImageWallpaper.

@@ -27,4 +27,9 @@
     <dimen name="lights_in_duration">250</dimen>
     <dimen name="lights_out_duration">1500</dimen>
     <dimen name="background_duration">200</dimen>
+
+    <!-- Edge-swipe-back gesture (Phase 4 — navigation). Mirrors AOSP SystemUI dimens. -->
+    <dimen name="edge_back_panel_width">48dp</dimen>
+    <dimen name="edge_back_edge_width">16dp</dimen>
+    <dimen name="edge_back_bottom_gesture_height">24dp</dimen>
 </resources>

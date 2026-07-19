@@ -3,6 +3,7 @@ package com.android.systemui
 import android.app.Application
 import android.content.res.Configuration
 import android.util.Log
+import com.android.systemui.navigationbar.EdgeBackController
 import com.android.systemui.statusbar.StatusBarManager
 import com.android.systemui.statusbar.shade.NotificationPanelViewController
 import com.android.systemui.statusbar.shade.NotificationShadeWindowController
@@ -22,6 +23,7 @@ class SystemUIApplication : Application() {
     @Inject lateinit var statusBarManager: StatusBarManager
     @Inject lateinit var shadeWindowController: NotificationShadeWindowController
     @Inject lateinit var notificationPanelController: NotificationPanelViewController
+    @Inject lateinit var edgeBackController: EdgeBackController
 
     override fun onCreate() {
         super.onCreate()
@@ -44,6 +46,11 @@ class SystemUIApplication : Application() {
         // Panel controller — binds TouchHandler to the shade window and drives
         // expand/collapse animations.
         coreStartableComponent.register(notificationPanelController)
+
+        // Edge-swipe-back gesture: an InputMonitor observes touches at the
+        // screen edges and injects a BACK key event when a qualifying horizontal
+        // swipe is detected (only while an app is in the foreground).
+        coreStartableComponent.register(edgeBackController)
 
         // Smoke-test: register a single trivial component to prove the
         // CoreStartable lifecycle (register → start → injected component.run)
